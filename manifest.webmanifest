@@ -1,10 +1,15 @@
 {
-  "name": "LAST ZONE Battle Royale",
+  "id": "./",
+  "name": "LAST ZONE 3D — Battle Royale",
   "short_name": "LAST ZONE",
   "start_url": "./",
+  "scope": "./",
   "display": "fullscreen",
   "orientation": "landscape",
   "background_color": "#101712",
   "theme_color": "#101712",
-  "description": "Браузерная battle royale игра с ботами."
+  "description": "3D battle royale prototype with bots.",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
 }
