@@ -3,7 +3,6 @@ import {Actor} from "./actor.js";
 import {BOT_COUNT,BOT_NAMES,WEAPONS} from "../core/config.js";
 import {distance2,normalize2,randomRange,seededRandom} from "../core/math.js";
 
-const LOADOUTS=["M416","AKM","SCARL","KAR98K"];
 const ROLES=[
  {id:"RUSHER",label:"Штурмовик",preferred:[9,25],speed:4.35,aggression:1.25,accuracy:.72,strafe:0.12},
  {id:"TACTICAL",label:"Тактик",preferred:[20,42],speed:3.55,aggression:1,accuracy:.84,strafe:.48},
@@ -19,7 +18,7 @@ export class BotSystem{
   this.rng=seededRandom(77381);this.bots=[];this.loot=null;
   for(let i=0;i<BOT_COUNT;i++){
    const role=ROLES[i%ROLES.length],b=new Actor("bot"+i,BOT_NAMES[i],[0x596b52,0x7b5545,0x536475,0x77715a][i%4],world.scene);
-   b.role=role;b.weapon=LOADOUTS[Math.floor(randomRange(this.rng,0,LOADOUTS.length))];
+   b.role=role;b.weapon=null;
    b.cool=randomRange(this.rng,0,1);b.state="ROAM";b.waypoint=this.randomPoint();
    b.think=randomRange(this.rng,0,.5);b.target=null;b.strafeSign=i%2?1:-1;
    b.personality={skill:randomRange(this.rng,.72,1.18),courage:randomRange(this.rng,.72,1.28)};
@@ -47,7 +46,7 @@ export class BotSystem{
   const found=this.loot.nearest(b.position.x,b.position.z,2.1);
   if(!found)return;
   const type=found.item.type,current=WEAPON_VALUE[b.weapon]||0,next=WEAPON_VALUE[type]||0;
-  if(next>current||(next===current&&type!==b.weapon&&this.rng()>.55)){
+  if(WEAPON_VALUE[type]&&( !b.weapon||next>current||(next===current&&type!==b.weapon&&this.rng()>.55))){
    this.loot.take(found.item);b.weapon=type;
   }
  }
@@ -75,11 +74,11 @@ export class BotSystem{
      speed=role.id==="SNIPER"?.65:role.speed*.58;
      if(this.rng()<.012)b.strafeSign*=-1;
     }
-    const weapon=WEAPONS[b.weapon]||WEAPONS.M416;
+    const weapon=b.weapon?WEAPONS[b.weapon]:null;
     const idealRange=b.weapon==="KAR98K"?48:31;
-    const inRange=d<(b.weapon==="KAR98K"?82:58);
+    const inRange=!!weapon&&d<(b.weapon==="KAR98K"?82:58);
     const courage=b.personality.courage*(role.aggression);
-    if(b.cool<=0&&inRange&&d>5&&!(d<min*.55&&role.id!=="RUSHER")){
+    if(weapon&&b.cool<=0&&inRange&&d>5&&!(d<min*.55&&role.id!=="RUSHER")){
      const error=(1-role.accuracy)+(1-b.personality.skill)*.55;
      const aimError=(this.rng()-.5)*error*(d/idealRange)*.14;
      this.combat.fire(b,b.yaw+aimError,b.weapon,Math.max(.45,1+(d-idealRange)/90));
