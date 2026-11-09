@@ -1,0 +1,80 @@
+name: Build LAST ZONE Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'manifest.webmanifest'
+      - 'icon.svg'
+      - 'package.json'
+      - 'capacitor.config.json'
+      - '.github/workflows/android-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Prepare bundled game files
+        run: |
+          mkdir -p www
+          cp index.html manifest.webmanifest icon.svg www/
+          # The native app does not need the website service worker.
+          sed -i '/serviceWorker.register/d' www/index.html
+
+      - name: Generate Android project
+        run: npx cap add android
+
+      - name: Sync Android project
+        run: npx cap sync android
+
+      - name: Set landscape and fullscreen display
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          s = s.replace('android:name=".MainActivity"', 'android:name=".MainActivity" android:screenOrientation="landscape"')
+          p.write_text(s)
+          styles = Path("android/app/src/main/res/values/styles.xml")
+          if styles.exists():
+              t = styles.read_text()
+              t = t.replace('</style>', '<item name="android:windowFullscreen">true</item></style>', 1)
+              styles.write_text(t)
+          PY
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAST-ZONE-Android-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
