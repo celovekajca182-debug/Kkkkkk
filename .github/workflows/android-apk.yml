@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - 'index.html'
+      - 'src/**'
       - 'manifest.webmanifest'
       - 'icon.svg'
       - 'package.json'
@@ -46,22 +47,13 @@ jobs:
         run: |
           mkdir -p www
           cp index.html manifest.webmanifest icon.svg sw.js www/
+          cp -R src www/src
           mkdir -p www/vendor
           cp node_modules/three/build/three.module.js www/vendor/three.module.js
           sed -i 's#https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js#./vendor/three.module.js#' www/index.html
 
-      - name: Validate game JavaScript syntax
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          html = Path("index.html").read_text()
-          match = re.search(r'<script type="module">(.*?)</script>', html, re.S)
-          if not match:
-              raise SystemExit("Game module script not found")
-          Path("/tmp/last-zone-game.mjs").write_text(match.group(1))
-          PY
-          node --check /tmp/last-zone-game.mjs
+      - name: Validate modular game JavaScript
+        run: npm run check
 
       - name: Generate Android project
         run: npx cap add android
