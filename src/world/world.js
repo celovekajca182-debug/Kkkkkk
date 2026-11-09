@@ -22,8 +22,8 @@ building(x,z,w,d,h){
  }
  // Front facade: central doorway, two windows and their lintels/sills.
  const segment=(cx,sx)=>addBox(wallMat,cx,h/2,d/2,sx,h,t);
- segment(-(w-doorW)/2-doorW/2,(w-doorW)/2);
- segment((w-doorW)/2+doorW/2,(w-doorW)/2);
+ segment(-(doorW/2+(w-doorW)/4),(w-doorW)/2);
+ segment(doorW/2+(w-doorW)/4,(w-doorW)/2);
  addBox(wallMat,0,doorH+(h-doorH)/2,d/2,doorW,h-doorH,t);
  // Window frames and dark openings give the facade readable depth.
  for(const side of [-1,1]){
@@ -38,7 +38,7 @@ building(x,z,w,d,h){
  g.position.set(x,0,z);this.scene.add(g);
  // Segment-based perimeter collision; doorway remains passable.
  const halfW=w/2,halfD=d/2;
- for(let i=0;i<5;i++){const px=x-halfW+(i+.5)*w/5; if(Math.abs(px-x)>doorW*.7)this.add(px,z+halfD,Math.min(w/10,.9),h,"buildingWall")}
+ for(let i=0;i<5;i++){const px=x-halfW+(i+.5)*w/5; if(Math.abs(px-x)>doorW/2+.45)this.add(px,z+halfD,Math.min(w/10,.9),h,"buildingWall")}
  for(let i=0;i<5;i++){const px=x-halfW+(i+.5)*w/5;this.add(px,z-halfD,Math.min(w/10,.9),h,"buildingWall")}
  for(const side of [-1,1])for(let i=0;i<4;i++){const pz=z-halfD+(i+.5)*d/4;this.add(x+side*halfW,pz,Math.min(d/8,.9),h,"buildingWall")}
 }
