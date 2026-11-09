@@ -38,6 +38,23 @@ building(x,z,w,d,h){
   addBox(wallMat,wx,wy-wh/2,d/2,ww,.1,t+.04);
   addBox(wallMat,wx,wy+wh/2,d/2,ww,.1,t+.04);
  }
+ // Repeated storey bands, window bays and balcony rails for 3–4 floor apartment blocks.
+ const floors=Math.max(1,Math.round(h/3.1));
+ for(let floor=1;floor<floors;floor++){
+  const y=floor*3.05;
+  addBox(floorMat,0,y,w-.5,d-.5,.16);
+  addBox(trim,0,y+1.45,d/2+.13,w*.9,.12,.22);
+  for(const bx of [-w*.23,w*.23]){
+   addBox(trim,bx,y+1.0,d/2+.32,.09,.9,.09);
+   addBox(trim,bx,y+.55,d/2+.32,.09,.08,.09);
+  }
+  for(const wx of [-w*.3,0,w*.3]){
+   addBox(trim,wx,y+1.85,d/2+.035,w*.18,.98,.08);
+   addBox(insideMat,wx,y+1.85,d/2+.085,w*.15,.78,.035);
+   addBox(trim,wx-w*.09,y+1.85,d/2+.13,.045,.9,.05);
+   addBox(trim,wx+w*.09,y+1.85,d/2+.13,.045,.9,.05);
+  }
+ }
  // Simple interior partition creates rooms while leaving a passage.
  addBox(insideMat,-w*.18,h*.32,0,.18,h*.64,d*.48);
  // Door frame and a recessed, hinged door leaf.
