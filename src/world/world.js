@@ -84,7 +84,7 @@ environment(){
   // Keep the spawn, roads and building footprints readable and navigable.
   if(Math.hypot(x,z)<24||Math.abs(z)<5||Math.abs(x+70)<12||Math.abs(x-75)<13||Math.abs(z-55)<13||Math.abs(z+45)<12)continue;
   let nearBuilding=false;
-  for(const [bx,bz,bw,bd] of [[-70,-45,15,12],[75,55,16,13],[-118,95,13,10],[122,-90,14,12],[25,-125,17,13],[-25,122,12,10],[-145,-10,19,14],[145,130,18,13],[8,72,14,11],[-8,-78,20,15]])if(Math.abs(x-bx)<bw/2+4&&Math.abs(z-bz)<bd/2+4){nearBuilding=true;break}
+  for(const [bx,bz,bw,bd] of (this.buildingLots||[]))if(Math.abs(x-bx)<bw/2+5&&Math.abs(z-bz)<bd/2+5){nearBuilding=true;break}
   if(nearBuilding)continue;
   const scale=randomRange(this.rng,.78,1.28),yaw=randomRange(this.rng,0,Math.PI*2);
   dummy.position.set(x,1.25*scale,z);dummy.rotation.set(0,yaw,0);dummy.scale.setScalar(scale);dummy.updateMatrix();trunks.setMatrixAt(placed,dummy.matrix);
@@ -106,7 +106,18 @@ environment(){
  const roadMat=new THREE.MeshStandardMaterial({color:0x716d5e,roughness:1});
  const road=(x,z,length,width,angle=0)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(width,length),roadMat);m.rotation.set(-Math.PI/2,0,angle);m.position.set(x,.035,z);this.scene.add(m)};
  road(0,0,390,5,0);road(-95,0,175,4,Math.PI/2);road(88,4,190,4,Math.PI/2);road(-42,-88,115,3,Math.PI/2);road(54,105,100,3,Math.PI/2);
- const buildings=[[-70,-45,15,12,5],[75,55,16,13,6],[-118,95,13,10,5],[122,-90,14,12,5],[25,-125,17,13,6],[-25,122,12,10,5],[-145,-10,19,14,6],[145,130,18,13,6],[8,72,14,11,5],[-8,-78,20,15,7]];
+ const buildings=[
+  // Dense apartment districts: six blocks per neighborhood, with narrow courtyards.
+  [-92,-72,15,12,12],[-72,-72,15,12,12],[-52,-72,15,12,15],
+  [-92,-54,15,12,15],[-72,-54,15,12,12],[-52,-54,15,12,12],
+  [62,62,16,13,15],[83,62,16,13,12],[104,62,16,13,15],
+  [62,82,16,13,12],[83,82,16,13,15],[104,82,16,13,12],
+  [105,-108,15,12,12],[125,-108,15,12,15],[145,-108,15,12,12],
+  [105,-89,15,12,15],[125,-89,15,12,12],[145,-89,15,12,15],
+  [-145,105,14,12,12],[-126,105,14,12,15],[-107,105,14,12,12],
+  [-145,124,14,12,15],[-126,124,14,12,12],[-107,124,14,12,15]
+ ];
+ this.buildingLots=buildings;
  for(const [x,z,w,d,h] of buildings)this.building(x,z,w,d,h);
  const ring=new THREE.Mesh(new THREE.TorusGeometry(178,.18,8,120),new THREE.MeshBasicMaterial({color:0xdac66d}));ring.rotation.x=Math.PI/2;ring.position.y=.3;this.scene.add(ring);this.zoneRing=ring;
 }
