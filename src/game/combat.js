@@ -34,7 +34,7 @@ export class Combat{
   this.bullets.push({mesh,x,y:1.45,z,vx:Math.sin(a)*w.speed,vy:0,vz:-Math.cos(a)*w.speed,owner:shooter.id,damage:w.damage,life:1.2});
   this.muzzle(x,1.45,z,angle);
   const d=shooter.id==="player"?0:Math.hypot(shooter.position.x-this.playerX,shooter.position.z-this.playerZ);
-  this.audio.gunshot(name,shooter.id==="player"?1:Math.max(.1,1-d/85));
+  this.audio.gunshot(name,shooter.id==="player"?1:Math.max(.1,1-d/85),shooter.id==="player");
  }
  setPlayerPosition(x,z){this.playerX=x;this.playerZ=z}
  update(dt,actors){
