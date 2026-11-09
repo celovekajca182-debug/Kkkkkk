@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check src/main.js && node --check src/game/game.js && node --check src/game/combat.js && node --check src/game/bots.js && node --check src/game/loot.js && node --check src/world/world.js && node --check src/core/input.js && node --check src/core/audio.js",
+    "check": "node --check src/main.js && node --check src/game/game.js && node --check src/game/actor.js && node --check src/game/combat.js && node --check src/game/bots.js && node --check src/game/loot.js && node --check src/world/world.js && node --check src/core/input.js && node --check src/core/audio.js",
     "test": "node --test",
     "build:android": "cap sync android"
   },
