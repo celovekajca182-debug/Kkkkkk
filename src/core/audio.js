@@ -14,7 +14,7 @@ export class AudioEngine{
  setEnabled(value){this.enabled=value;if(this.master)this.master.gain.setTargetAtTime(value?.8:.0001,this.ctx.currentTime,.05)}
  sample(url){let a=this.samples.get(url);if(!a){a=new Audio(url);a.preload="auto";a.crossOrigin="anonymous";this.samples.set(url,a)}return a}
  play(url,volume=1){if(!this.enabled)return;const a=this.sample(url).cloneNode();a.volume=Math.max(0,Math.min(1,volume));a.play().catch(()=>{});}
- gunshot(name="M416",volume=1){const now=performance.now();if(volume<.99&&now-this.lastBotShot<115)return;if(volume<.99)this.lastBotShot=now;else if(now-this.lastShot<65)return;else this.lastShot=now;const list=SOURCES[name]||SOURCES.M416;const file=list[Math.floor(Math.random()*list.length)];this.play(BASE+file,volume)}
+ gunshot(name="M416",volume=1,isPlayer=false){const now=performance.now();if(!isPlayer&&now-this.lastBotShot<115)return;if(!isPlayer)this.lastBotShot=now;else if(now-this.lastShot<65)return;else this.lastShot=now;const list=SOURCES[name]||SOURCES.M416;const file=list[Math.floor(Math.random()*list.length)];this.play(BASE+file,volume)}
  reload(){/* No fake reload tone: connect a licensed recorded reload sample when added. */}
  hit(){/* No synthesized hit tone. */}
  footstep(run=false){const file="step-hard-"+Math.floor(Math.random()*4)+".wav";this.play(BASE+file,run?.62:.4)}
