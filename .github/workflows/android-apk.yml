@@ -40,6 +40,9 @@ jobs:
         run: |
           mkdir -p www
           cp index.html manifest.webmanifest icon.svg sw.js www/
+          mkdir -p www/vendor
+          cp node_modules/three/build/three.module.js www/vendor/three.module.js
+          sed -i 's#https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js#./vendor/three.module.js#' www/index.html
 
       - name: Generate Android project
         run: npx cap add android
