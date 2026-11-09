@@ -1,12 +1,22 @@
+// Real recorded CC0 firearm reports and field footstep recordings.
+// Source: yegors/hard-lines public/audio; source notes and original recordists:
+// https://github.com/yegors/hard-lines/blob/main/public/audio/README.md
+const BASE="https://raw.githubusercontent.com/yegors/hard-lines/main/public/audio/";
+const SOURCES={
+ M416:["hk416-report-0.wav","hk416-report-1.wav","hk416-report-2.wav"],
+ SCARL:["hk416-report-0.wav","hk416-report-1.wav","hk416-report-2.wav"],
+ AKM:["ak47-report-0.wav","ak47-report-1.wav","ak47-report-2.wav"],
+ KAR98K:["awm-report-0.wav","awm-report-1.wav","awm-report-2.wav"]
+};
 export class AudioEngine{
-constructor(){this.ctx=null;this.master=null;this.buffer=null;this.enabled=true}
-init(){if(!this.enabled)return null;if(!this.ctx){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;this.ctx=new C();this.master=this.ctx.createGain();this.master.gain.value=.55;const comp=this.ctx.createDynamicsCompressor();this.master.connect(comp);comp.connect(this.ctx.destination);this.buffer=this.ctx.createBuffer(1,this.ctx.sampleRate,this.ctx.sampleRate);const a=this.buffer.getChannelData(0);for(let i=0;i<a.length;i++)a[i]=Math.random()*2-1}if(this.ctx.state==="suspended")this.ctx.resume();return this.ctx}
-setEnabled(v){this.enabled=v;if(v)this.init();if(this.master)this.master.gain.setTargetAtTime(v?.55:.0001,this.ctx.currentTime,.05)}
-noise(duration,volume,frequency,filterType="lowpass"){const c=this.init();if(!c)return;const src=c.createBufferSource(),f=c.createBiquadFilter(),g=c.createGain(),t=c.currentTime;src.buffer=this.buffer;f.type=filterType;f.frequency.value=frequency;g.gain.setValueAtTime(volume,t);g.gain.exponentialRampToValueAtTime(.0001,t+duration);src.connect(f);f.connect(g);g.connect(this.master);src.start();src.stop(t+duration)}
-tone(a,b,d,v,wave="triangle"){const c=this.init();if(!c)return;const o=c.createOscillator(),g=c.createGain(),t=c.currentTime;o.type=wave;o.frequency.setValueAtTime(a,t);o.frequency.exponentialRampToValueAtTime(b,t+d);g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g);g.connect(this.master);o.start();o.stop(t+d)}
-gunshot(name="M416",volume=1){if(!this.enabled)return;const heavy=name==="AKM"||name==="KAR98K";this.noise(heavy?.2:.13,.22*volume,heavy?1000:1600);this.noise(.04,.2*volume,4800,"highpass");this.tone(heavy?100:145,40,.12,.09*volume)}
-reload(){this.noise(.06,.1,1800,"highpass");this.tone(300,180,.08,.04)}
-hit(){this.noise(.06,.12,900);this.tone(210,90,.09,.04)}
-footstep(run=false){this.noise(.07,run?.07:.045,220)}
-pickup(){this.tone(520,850,.12,.05)}
+ constructor(){this.enabled=true;this.ctx=null;this.master=null;this.samples=new Map();this.lastShot=0}
+ init(){if(!this.enabled)return null;const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;if(!this.ctx){this.ctx=new C();this.master=this.ctx.createGain();this.master.gain.value=.8;this.master.connect(this.ctx.destination)}if(this.ctx.state==="suspended")this.ctx.resume();return this.ctx}
+ setEnabled(value){this.enabled=value;if(this.master)this.master.gain.setTargetAtTime(value?.8:.0001,this.ctx.currentTime,.05)}
+ sample(url){let a=this.samples.get(url);if(!a){a=new Audio(url);a.preload="auto";a.crossOrigin="anonymous";this.samples.set(url,a)}return a}
+ play(url,volume=1){if(!this.enabled)return;const a=this.sample(url).cloneNode();a.volume=Math.max(0,Math.min(1,volume));a.play().catch(()=>{});}
+ gunshot(name="M416",volume=1){const list=SOURCES[name]||SOURCES.M416;const file=list[Math.floor(Math.random()*list.length)];this.play(BASE+file,volume)}
+ reload(){/* No fake reload tone: connect a licensed recorded reload sample when added. */}
+ hit(){/* No synthesized hit tone. */}
+ footstep(run=false){const file="step-hard-"+Math.floor(Math.random()*4)+".wav";this.play(BASE+file,run?.62:.4)}
+ pickup(){/* UI stays silent until a recorded interface sample is added. */}
 }
