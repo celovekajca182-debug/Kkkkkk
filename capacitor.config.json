@@ -1,0 +1,10 @@
+{
+  "appId": "com.lastzone.battleroyale",
+  "appName": "LAST ZONE",
+  "webDir": "www",
+  "backgroundColor": "#101712",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false
+  }
+}
