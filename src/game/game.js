@@ -4,7 +4,8 @@ import {Input} from "../core/input.js";
 import {AudioEngine} from "../core/audio.js";
 import {Actor} from "./actor.js";
 import {Combat} from "./combat.js";
-import {BotSystem} from "./bots.js";\nimport {LootSystem} from "./loot.js";
+import {BotSystem} from "./bots.js";
+import {LootSystem} from "./loot.js";
 import {PLAYER,WEAPONS,ZONE} from "../core/config.js";
 import {clamp,normalize2} from "../core/math.js";
 export class Game{
