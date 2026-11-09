@@ -1,4 +1,4 @@
-const CACHE='last-zone-pwa-v3';
+const CACHE='last-zone-pwa-v4';
 const SHELL=['./','./index.html','./manifest.webmanifest','./icon.svg','https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{const cache=await caches.open(CACHE);for(const url of SHELL){try{await cache.add(url)}catch(error){console.warn('Не удалось сохранить ресурс:',url,error)}}await self.skipWaiting()})()));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key!==CACHE)await caches.delete(key);await self.clients.claim()})()));
