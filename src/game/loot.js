@@ -2,14 +2,14 @@ import * as THREE from "three";
 import {WEAPONS} from "../core/config.js";
 import {randomRange,seededRandom} from "../core/math.js";
 
-const TYPES=["AKM","SCARL","KAR98K","M416"];
+function randomWeapon(rng){const roll=rng();return roll<.36?"M416":roll<.63?"SCARL":roll<.88?"AKM":"KAR98K"}
 export class LootSystem{
  constructor(world){
   this.world=world;this.items=[];this.rng=seededRandom(42917);
   for(let i=0;i<18;i++){
    let x=randomRange(this.rng,-175,175),z=randomRange(this.rng,-175,175),tries=0;
    while((Math.hypot(x,z)<22||world.obstacles.some(o=>Math.hypot(o.x-x,o.z-z)<o.r+3))&&tries++<40){x=randomRange(this.rng,-175,175);z=randomRange(this.rng,-175,175)}
-   const type=TYPES[i%TYPES.length],group=new THREE.Group();
+   const type=randomWeapon(this.rng),group=new THREE.Group();
    const body=new THREE.Mesh(new THREE.BoxGeometry(.9,.13,.22),new THREE.MeshStandardMaterial({color:type==="KAR98K"?0x8b6847:type==="AKM"?0x75523c:0x46554b,roughness:.82,metalness:.18}));
    const stock=new THREE.Mesh(new THREE.BoxGeometry(.24,.18,.28),new THREE.MeshStandardMaterial({color:0x514536,roughness:1}));stock.position.x=-.48;
    const mag=new THREE.Mesh(new THREE.BoxGeometry(.16,.28,.14),new THREE.MeshStandardMaterial({color:0x252a26,roughness:.7}));mag.position.set(.12,-.17,0);
