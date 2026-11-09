@@ -23,7 +23,6 @@ export class Combat{
   for(let i=0;i<5;i++){
    const m=new THREE.Mesh(new THREE.TetrahedronGeometry(.045+Math.random()*.025),new THREE.MeshBasicMaterial({color:colors[i%colors.length],transparent:true,opacity:.95}));
    m.position.set((Math.random()-.5)*.18,.9+Math.random()*.35,(Math.random()-.5)*.18);
-   m.userData.velocity.set?.(0,0,0);
    group.add(m);
   }
   group.position.set(x,0,z);this.effect(group,.24,e=>{const k=1-e.life/e.max;e.mesh.children.forEach((m,i)=>{m.position.y+=.012;m.scale.setScalar(1-k)})});
