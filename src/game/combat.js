@@ -1,0 +1,10 @@
+import * as THREE from "three";
+import {WEAPONS} from "../core/config.js";
+import {segmentDistanceSq} from "../core/math.js";
+export class Combat{
+ constructor(world,audio,onDamage){this.world=world;this.audio=audio;this.onDamage=onDamage;this.bullets=[];this.geo=new THREE.SphereGeometry(.055,6,5);this.mat=new THREE.MeshBasicMaterial({color:0xffdfa0});this.playerX=0;this.playerZ=0}
+ fire(shooter,angle,name,spreadScale=1){const w=WEAPONS[name]||WEAPONS.M416,a=angle+(Math.random()-.5)*w.spread*spreadScale*2,x=shooter.position.x+Math.sin(angle)*.5,z=shooter.position.z-Math.cos(angle)*.5,mesh=new THREE.Mesh(this.geo,this.mat);mesh.position.set(x,1.45,z);mesh.scale.set(.8,.8,2.4);mesh.rotation.y=Math.PI-a;this.world.scene.add(mesh);this.bullets.push({mesh,x,y:1.45,z,vx:Math.sin(a)*w.speed,vy:0,vz:-Math.cos(a)*w.speed,owner:shooter.id,damage:w.damage,life:1.8});const d=shooter.id==="player"?0:Math.hypot(shooter.position.x-this.playerX,shooter.position.z-this.playerZ);this.audio.gunshot(name,shooter.id==="player"?1:Math.max(.1,1-d/85))}
+ setPlayerPosition(x,z){this.playerX=x;this.playerZ=z}
+ update(dt,actors){for(let i=this.bullets.length-1;i>=0;i--){const b=this.bullets[i],ax=b.x,az=b.z,bx=ax+b.vx*dt,bz=az+b.vz*dt;b.life-=dt;let hit=null,best=Infinity;for(const a of actors){if(!a.alive||a.id===b.owner)continue;const d=segmentDistanceSq(a.position.x,a.position.z,ax,az,bx,bz);if(d<.58*.58&&1.45>.4){const score=Math.hypot(a.position.x-(ax+bx)/2,a.position.z-(az+bz)/2);if(score<best){best=score;hit=a}}}if(hit&&!this.world.lineBlocked(ax,az,bx,bz)){this.onDamage(hit,b.damage,b.owner);b.life=0}else if(this.world.lineBlocked(ax,az,bx,bz))b.life=0;b.x=bx;b.z=bz;b.mesh.position.set(bx,1.45,bz);if(b.life<=0){this.world.scene.remove(b.mesh);this.bullets.splice(i,1)}}}
+ clear(){for(const b of this.bullets)this.world.scene.remove(b.mesh);this.bullets.length=0}
+}
