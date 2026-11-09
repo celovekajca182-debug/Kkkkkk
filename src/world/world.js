@@ -1,8 +1,8 @@
 import * as THREE from "three";import {segmentDistanceSq,clamp,randomRange,seededRandom} from "../core/math.js";
 export class World{
-constructor(canvas){this.scene=new THREE.Scene();this.scene.background=new THREE.Color(0x9bb6bd);this.scene.fog=new THREE.Fog(0x9bb6bd,100,330);this.camera=new THREE.PerspectiveCamera(78,innerWidth/innerHeight,.1,650);this.renderer=new THREE.WebGLRenderer({canvas,antialias:!matchMedia("(pointer:coarse)").matches,powerPreference:"high-performance"});this.quality=this.detectQuality();this.renderer.setPixelRatio(this.quality.pixelRatio);this.renderer.setSize(innerWidth,innerHeight,false);this.renderer.info.autoReset=true;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.12;this.obstacles=[];this.rng=seededRandom(981);this.scene.add(new THREE.HemisphereLight(0xdde9e8,0x35422f,this.quality.low?1.25:1.55));const sun=new THREE.DirectionalLight(0xffe2bd,2.4);sun.position.set(-70,110,60);sun.castShadow=false;this.scene.add(sun);this.terrain();this.environment();this.createTransportPlane();addEventListener("resize",()=>this.resize())}
-detectQuality(){const mobile=matchMedia("(pointer:coarse)").matches,cores=navigator.hardwareConcurrency||4,memory=navigator.deviceMemory||4;const low=mobile&&(cores<=4||memory<=3),mid=mobile&&(cores<=6||memory<=4);return{tier:low?"LOW":mid?"BALANCED":"HIGH",pixelRatio:Math.min(devicePixelRatio,low?.72:mid?.9:mobile?1.15:1.5),low,mid}}
-terrain(){const g=new THREE.PlaneGeometry(420,420,100,100),p=g.attributes.position,c=[];for(let i=0;i<p.count;i++){const x=p.getX(i),z=-p.getY(i),h=Math.sin(x*.04)*.2+Math.cos(z*.035)*.18;p.setZ(i,h);const k=(Math.sin(x*.13+z*.09)+Math.cos(z*.15))*.02;c.push(.28+k,.38+k,.22+k*.5)}g.setAttribute("color",new THREE.Float32BufferAttribute(c,3));g.rotateX(-Math.PI/2);g.computeVertexNormals();const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1}));m.receiveShadow=true;this.scene.add(m)}
+constructor(canvas){this.scene=new THREE.Scene();this.quality=this.detectQuality();this.scene.background=new THREE.Color(0x9bb6bd);this.scene.fog=new THREE.Fog(0x9bb6bd,this.quality.low?72:this.quality.mid?90:110,this.quality.low?190:this.quality.mid?245:300);this.camera=new THREE.PerspectiveCamera(78,innerWidth/innerHeight,.1,this.quality.low?360:480);this.renderer=new THREE.WebGLRenderer({canvas,antialias:false,powerPreference:"high-performance",stencil:false,depth:true,preserveDrawingBuffer:false});this.renderer.setPixelRatio(this.quality.pixelRatio);this.renderer.setSize(innerWidth,innerHeight,false);this.renderer.info.autoReset=true;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.08;this.renderer.shadowMap.enabled=false;this.obstacles=[];this.rng=seededRandom(981);this.scene.add(new THREE.HemisphereLight(0xdde9e8,0x35422f,this.quality.low?1.25:1.55));const sun=new THREE.DirectionalLight(0xffe2bd,2.4);sun.position.set(-70,110,60);sun.castShadow=false;this.scene.add(sun);this.terrain();this.environment();this.createTransportPlane();addEventListener("resize",()=>this.resize())}
+detectQuality(){const mobile=matchMedia("(pointer:coarse)").matches,cores=navigator.hardwareConcurrency||4,memory=navigator.deviceMemory||4;const low=mobile&&(cores<=4||memory<=3),mid=mobile&&(cores<=6||memory<=4);return{tier:low?"LOW":mid?"BALANCED":"HIGH",pixelRatio:Math.min(devicePixelRatio,low?.65:mid?.82:mobile?1:1.35),low,mid,mobile}}
+terrain(){const segments=this.quality.low?48:this.quality.mid?64:84;const g=new THREE.PlaneGeometry(420,420,segments,segments),p=g.attributes.position,c=[];for(let i=0;i<p.count;i++){const x=p.getX(i),z=-p.getY(i),h=Math.sin(x*.04)*.2+Math.cos(z*.035)*.18;p.setZ(i,h);const k=(Math.sin(x*.13+z*.09)+Math.cos(z*.15))*.02;c.push(.28+k,.38+k,.22+k*.5)}g.setAttribute("color",new THREE.Float32BufferAttribute(c,3));g.rotateX(-Math.PI/2);g.computeVertexNormals();const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1}));m.receiveShadow=true;this.scene.add(m)}
 add(x,z,r,h,kind){this.obstacles.push({x,z,r,height:h,kind})}
 tree(x,z){const g=new THREE.Group(),b=new THREE.Mesh(new THREE.CylinderGeometry(.18,.3,2.6,8),new THREE.MeshStandardMaterial({color:0x59422d}));b.position.y=1.3;g.add(b);for(let i=0;i<3;i++){const c=new THREE.Mesh(new THREE.ConeGeometry(1.7-i*.25,2.7,8),new THREE.MeshStandardMaterial({color:[0x214a2d,0x2d5b37,0x37683f][i]}));c.position.y=2.5+i*.62;g.add(c)}g.position.set(x,0,z);this.scene.add(g);this.add(x,z,1.2,3,"tree")}
 rock(x,z){const m=new THREE.Mesh(new THREE.DodecahedronGeometry(1,1),new THREE.MeshStandardMaterial({color:0x737a75,roughness:1}));m.position.set(x,.6,z);m.scale.set(1.4,.8,1.1);this.scene.add(m);this.add(x,z,1.3,1.5,"rock")}
@@ -68,10 +68,11 @@ building(x,z,w,d,h){
  for(const side of [-1,1])for(let i=0;i<4;i++){const pz=z-halfD+(i+.5)*d/4;this.add(x+side*halfW,pz,Math.min(d/8,.9),h,"buildingWall")}
 }
 environment(){
- const treeCount=this.quality.low?230:this.quality.mid?360:520;
- const rockCount=this.quality.low?42:this.quality.mid?64:88;
+ const buildings=[[-92,-72,15,12,12],[-72,-72,15,12,12],[-52,-72,15,12,15],[-92,-54,15,12,15],[-72,-54,15,12,12],[-52,-54,15,12,12],[62,62,16,13,15],[83,62,16,13,12],[104,62,16,13,15],[62,82,16,13,12],[83,82,16,13,15],[104,82,16,13,12],[105,-108,15,12,12],[125,-108,15,12,15],[145,-108,15,12,12],[105,-89,15,12,15],[125,-89,15,12,12],[145,-89,15,12,15],[-145,105,14,12,12],[-126,105,14,12,15],[-107,105,14,12,12],[-145,124,14,12,15],[-126,124,14,12,12],[-107,124,14,12,15]];this.buildingLots=buildings;
+ const treeCount=this.quality.low?150:this.quality.mid?250:390;
+ const rockCount=this.quality.low?28:this.quality.mid?44:64;
  const trunkGeo=new THREE.CylinderGeometry(.16,.27,2.5,6);
- const leafGeo=[new THREE.ConeGeometry(1.55,2.5,7),new THREE.ConeGeometry(1.3,2.25,7),new THREE.ConeGeometry(1.05,2,7)];
+ const leafGeo=[new THREE.ConeGeometry(1.45,2.35,6),new THREE.ConeGeometry(1.2,2.05,6),new THREE.ConeGeometry(.95,1.8,6)];
  const trunkMat=new THREE.MeshStandardMaterial({color:0x55402c,roughness:1});
  const leafMats=[0x1e472c,0x285735,0x35643b].map(color=>new THREE.MeshStandardMaterial({color,roughness:1}));
  const trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,treeCount);
@@ -106,20 +107,24 @@ environment(){
  const roadMat=new THREE.MeshStandardMaterial({color:0x716d5e,roughness:1});
  const road=(x,z,length,width,angle=0)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(width,length),roadMat);m.rotation.set(-Math.PI/2,0,angle);m.position.set(x,.035,z);this.scene.add(m)};
  road(0,0,390,5,0);road(-95,0,175,4,Math.PI/2);road(88,4,190,4,Math.PI/2);road(-42,-88,115,3,Math.PI/2);road(54,105,100,3,Math.PI/2);
- const buildings=[
-  // Dense apartment districts: six blocks per neighborhood, with narrow courtyards.
-  [-92,-72,15,12,12],[-72,-72,15,12,12],[-52,-72,15,12,15],
-  [-92,-54,15,12,15],[-72,-54,15,12,12],[-52,-54,15,12,12],
-  [62,62,16,13,15],[83,62,16,13,12],[104,62,16,13,15],
-  [62,82,16,13,12],[83,82,16,13,15],[104,82,16,13,12],
-  [105,-108,15,12,12],[125,-108,15,12,15],[145,-108,15,12,12],
-  [105,-89,15,12,15],[125,-89,15,12,12],[145,-89,15,12,15],
-  [-145,105,14,12,12],[-126,105,14,12,15],[-107,105,14,12,12],
-  [-145,124,14,12,15],[-126,124,14,12,12],[-107,124,14,12,15]
- ];
- this.buildingLots=buildings;
+ this.createGrass();
  for(const [x,z,w,d,h] of buildings)this.building(x,z,w,d,h);
  const ring=new THREE.Mesh(new THREE.TorusGeometry(178,.18,8,120),new THREE.MeshBasicMaterial({color:0xdac66d}));ring.rotation.x=Math.PI/2;ring.position.y=.3;this.scene.add(ring);this.zoneRing=ring;
+}
+
+
+createGrass(){
+ const count=this.quality.low?2600:this.quality.mid?5200:9000;
+ const geo=new THREE.PlaneGeometry(.13,.52,1,1);geo.translate(0,.26,0);
+ const mat=new THREE.MeshStandardMaterial({color:0x78934e,roughness:1,side:THREE.DoubleSide});
+ const grass=new THREE.InstancedMesh(geo,mat,count),dummy=new THREE.Object3D();let placed=0,tries=0;
+ while(placed<count&&tries<count*5){
+  tries++;const x=randomRange(this.rng,-205,205),z=randomRange(this.rng,-205,205);
+  if(Math.abs(z)<3.8||Math.abs(x+95)<2.5||Math.abs(x-88)<2.5||Math.hypot(x,z)<18)continue;
+  let blocked=false;for(const [bx,bz,bw,bd] of this.buildingLots)if(Math.abs(x-bx)<bw/2+2&&Math.abs(z-bz)<bd/2+2){blocked=true;break}if(blocked)continue;
+  const scale=randomRange(this.rng,.55,1.35);dummy.position.set(x,0,z);dummy.rotation.set(0,randomRange(this.rng,0,Math.PI),randomRange(this.rng,-.12,.12));dummy.scale.set(scale,scale,scale);dummy.updateMatrix();grass.setMatrixAt(placed++,dummy.matrix);
+ }
+ grass.count=placed;grass.instanceMatrix.needsUpdate=true;grass.frustumCulled=true;this.scene.add(grass);this.grass=grass;
 }
 
 createTransportPlane(){
