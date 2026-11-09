@@ -40,9 +40,7 @@ jobs:
       - name: Prepare bundled game files
         run: |
           mkdir -p www
-          cp index.html manifest.webmanifest icon.svg www/
-          # The native app does not need the website service worker.
-          sed -i '/serviceWorker.register/d' www/index.html
+          cp index.html manifest.webmanifest icon.svg sw.js www/
 
       - name: Generate Android project
         run: npx cap add android
