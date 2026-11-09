@@ -1,9 +1,11 @@
 {
-  "name": "last-zone-android",
-  "version": "1.0.0",
+  "name": "last-zone",
+  "version": "2.0.0",
   "private": true,
-  "description": "LAST ZONE 3D Android game wrapper",
+  "type": "module",
   "scripts": {
+    "check": "node --check src/main.js && node --check src/game/game.js && node --check src/game/actor.js && node --check src/game/combat.js && node --check src/game/bots.js && node --check src/game/loot.js && node --check src/world/world.js && node --check src/core/input.js && node --check src/core/audio.js && node --check src/game/viewmodel.js",
+    "test": "node --test",
     "build:android": "cap sync android"
   },
   "dependencies": {

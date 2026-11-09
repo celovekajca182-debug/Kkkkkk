@@ -4,8 +4,11 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
     paths:
       - 'index.html'
+      - 'src/**'
       - 'manifest.webmanifest'
       - 'icon.svg'
       - 'package.json'
@@ -14,6 +17,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -40,9 +47,13 @@ jobs:
         run: |
           mkdir -p www
           cp index.html manifest.webmanifest icon.svg sw.js www/
+          cp -R src www/src
           mkdir -p www/vendor
           cp node_modules/three/build/three.module.js www/vendor/three.module.js
           sed -i 's#https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js#./vendor/three.module.js#' www/index.html
+
+      - name: Validate modular game JavaScript
+        run: npm run check
 
       - name: Generate Android project
         run: npx cap add android
@@ -69,7 +80,17 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          for attempt in 1 2 3; do
+            if ./gradlew --no-daemon assembleDebug; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Gradle build failed (attempt $attempt/3); clearing incomplete distribution and retrying in 15 seconds..."
+              rm -rf "$HOME/.gradle/wrapper/dists/gradle-8.2.1-all"
+              sleep 15
+            fi
+          done
+          exit 1
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
