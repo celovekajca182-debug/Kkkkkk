@@ -46,6 +46,7 @@ def build_instruction_corpus(
     knowledge_path: Path,
     dialogue_path: Path,
     instructions_path: Path,
+    coding_path: Path | None = None,
 ) -> str:
     pieces = [
         "Ты — SWIN AI, самостоятельный русскоязычный помощник по программированию, разработке игр и техническим вопросам.",
@@ -61,6 +62,8 @@ def build_instruction_corpus(
                 pieces.append(f"Тема: {title}\nПользователь: {question}\nSWIN: {answer}")
     pieces.extend(read_instruction_file(dialogue_path))
     pieces.extend(read_instruction_file(instructions_path))
+    if coding_path is not None:
+        pieces.extend(read_instruction_file(coding_path))
     return join_corpus(*pieces)
 
 
@@ -171,6 +174,8 @@ def main():
     parser.add_argument("--web-validation", default="data/fineweb2_ru_validation.txt")
     parser.add_argument("--instructions-train", default="data/openassistant_ru_train.jsonl")
     parser.add_argument("--instructions-validation", default="data/openassistant_ru_validation.jsonl")
+    parser.add_argument("--coding-train", default="data/mbpp_python_train.jsonl")
+    parser.add_argument("--coding-validation", default="data/mbpp_python_validation.jsonl")
     parser.add_argument("--output", default="models/swin-transformer.pt")
     parser.add_argument("--pretrain-output", default="models/swin-transformer-pretrain.pt")
     parser.add_argument("--pretrain-epochs", type=int, default=10)
@@ -235,11 +240,11 @@ def main():
         Path(args.knowledge),
         Path(args.dialogue),
         Path(args.instructions_train),
+        Path(args.coding_train),
     )
-    sft_validation = (
-        join_corpus(*read_instruction_file(Path(args.instructions_validation)))
-        if Path(args.instructions_validation).is_file()
-        else ""
+    sft_validation = join_corpus(
+        *read_instruction_file(Path(args.instructions_validation)),
+        *read_instruction_file(Path(args.coding_validation)),
     )
     sft_train_data, sft_val_data = build_tensor_splits(
         sft_train, sft_validation, args.block_size
