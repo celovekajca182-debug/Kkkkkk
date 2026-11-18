@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.graphics.Color
 import android.text.InputType
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import org.json.JSONObject
@@ -13,12 +14,24 @@ import java.net.URL
 import java.util.UUID
 import kotlin.concurrent.thread
 
+private class ApiException(val statusCode: Int, message: String) : Exception(message)
+
 class MainActivity : Activity() {
-    private lateinit var log: TextView
-    private lateinit var input: EditText
     private lateinit var endpoint: EditText
-    private lateinit var send: Button
-    private lateinit var sessionId: String
+    private lateinit var emailInput: EditText
+    private lateinit var passwordInput: EditText
+    private lateinit var confirmInput: EditText
+    private lateinit var authStatus: TextView
+    private lateinit var authButton: Button
+    private lateinit var chatLog: TextView
+    private lateinit var chatInput: EditText
+    private lateinit var sendButton: Button
+
+    private var isRegisterMode = false
+    private var authToken: String? = null
+    private var userEmail = ""
+    private var sessionId = ""
+    private var endpointValue: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,118 +39,364 @@ class MainActivity : Activity() {
         window.navigationBarColor = Color.rgb(12, 14, 24)
 
         val preferences = getPreferences(MODE_PRIVATE)
-        sessionId = preferences.getString("session_id", null) ?: UUID.randomUUID().toString()
-        preferences.edit().putString("session_id", sessionId).apply()
+        endpointValue = preferences.getString("api_base", "") ?: ""
+        authToken = SecureTokenStore.read(this)
+        userEmail = preferences.getString("account_email", "") ?: ""
+        if (authToken != null && userEmail.isNotBlank()) {
+            sessionId = preferences.getString("session_id:$userEmail", null)
+                ?: UUID.randomUUID().toString()
+            preferences.edit().putString("session_id:$userEmail", sessionId).apply()
+            showChatScreen()
+            validateSavedSession()
+        } else {
+            showAuthScreen()
+        }
+    }
 
-        val root = LinearLayout(this).apply {
+    private fun darkRoot(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(22, 20, 22, 18)
+        setBackgroundColor(Color.rgb(12, 14, 24))
+    }
+
+    private fun makeText(value: String, size: Float, color: Int = Color.WHITE): TextView =
+        TextView(this).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+        }
+
+    private fun makeEdit(
+        hintText: String,
+        type: Int,
+        singleLine: Boolean = true
+    ): EditText = EditText(this).apply {
+        hint = hintText
+        inputType = type
+        setSingleLine(singleLine)
+        textSize = 16f
+        setTextColor(Color.WHITE)
+        setHintTextColor(Color.rgb(145, 150, 165))
+        setPadding(14, 10, 14, 10)
+        minHeight = 50
+    }
+
+    private fun makeButton(label: String, onClick: () -> Unit): Button =
+        Button(this).apply {
+            text = label
+            isAllCaps = false
+            textSize = 15f
+            setOnClickListener { onClick() }
+        }
+
+    private fun addGap(root: LinearLayout, height: Int = 10) {
+        root.addView(View(this), LinearLayout.LayoutParams(1, height))
+    }
+
+    private fun showAuthScreen(message: String? = null) {
+        val root = darkRoot()
+        val scroll = ScrollView(this)
+        val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 18, 20, 14)
-            setBackgroundColor(Color.rgb(12, 14, 24))
-        }
-        val title = TextView(this).apply {
-            text = "SWIN AI"
-            textSize = 27f
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(170, 145, 255))
-        }
-        endpoint = EditText(this).apply {
-            hint = "HTTPS-адрес своего сервера (необязательно)"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setSingleLine(true)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            setText(preferences.getString("api_base", "") ?: "")
-        }
-        log = TextView(this).apply {
-            text = "SWIN AI 0.3 — Transformer + память диалога\nОфлайн-справочник включён.\n"
-            textSize = 16f
-            setTextColor(Color.WHITE)
-            setPadding(8, 16, 8, 16)
-        }
-        val scroll = ScrollView(this).apply { addView(log) }
-        input = EditText(this).apply {
-            hint = "Напиши сообщение..."
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-        }
-        send = Button(this).apply {
-            text = "Отправить"
-            setOnClickListener { sendMessage() }
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(4, 18, 4, 18)
         }
 
-        root.addView(title, LinearLayout.LayoutParams(-1, 54))
-        root.addView(endpoint, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+        val title = makeText("SWIN AI", 30f, Color.rgb(170, 145, 255)).apply {
+            gravity = Gravity.CENTER
+        }
+        val subtitle = makeText(
+            if (isRegisterMode) "Создай аккаунт по электронной почте" else "Войди в свой аккаунт",
+            15f,
+            Color.LTGRAY
+        ).apply { gravity = Gravity.CENTER }
+
+        endpoint = makeEdit(
+            "HTTPS-адрес сервера SWIN AI",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        ).apply { setText(endpointValue) }
+        emailInput = makeEdit(
+            "Электронная почта",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+        )
+        passwordInput = makeEdit(
+            "Пароль (минимум 12 символов)",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        )
+        confirmInput = makeEdit(
+            "Повтори пароль",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        ).apply {
+            visibility = if (isRegisterMode) View.VISIBLE else View.GONE
+        }
+
+        authStatus = makeText(message ?: "Пароль хранится на сервере только в виде хеша.", 13f, Color.LTGRAY)
+        authButton = makeButton(
+            if (isRegisterMode) "Зарегистрироваться" else "Войти"
+        ) { submitAuthentication() }
+        val switchButton = makeButton(
+            if (isRegisterMode) "У меня уже есть аккаунт — войти" else "Создать новый аккаунт"
+        ) {
+            isRegisterMode = !isRegisterMode
+            showAuthScreen()
+        }
+
+        content.addView(title, LinearLayout.LayoutParams(-1, 58))
+        content.addView(subtitle, LinearLayout.LayoutParams(-1, 36))
+        addGap(content, 12)
+        content.addView(endpoint, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+        addGap(content, 8)
+        content.addView(emailInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+        addGap(content, 8)
+        content.addView(passwordInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+        addGap(content, 8)
+        content.addView(confirmInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+        addGap(content, 14)
+        content.addView(authStatus, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+        addGap(content, 8)
+        content.addView(authButton, LinearLayout.LayoutParams(-1, 54))
+        content.addView(switchButton, LinearLayout.LayoutParams(-1, 50))
+        scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(input, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
-        root.addView(send, LinearLayout.LayoutParams(-1, 52))
         setContentView(root)
     }
 
-    private fun getChatUrl(): String {
+    private fun submitAuthentication() {
         val base = endpoint.text.toString().trim().trimEnd('/')
-        return if (base.endsWith("/chat")) base else base + "/chat"
+        val email = emailInput.text.toString().trim()
+        val password = passwordInput.text.toString()
+        if (!base.startsWith("https://")) {
+            authStatus.text = "Укажи HTTPS-адрес своего API-сервера."
+            return
+        }
+        if (email.isBlank() || password.isBlank()) {
+            authStatus.text = "Заполни почту и пароль."
+            return
+        }
+        if (isRegisterMode) {
+            if (password.length < 12) {
+                authStatus.text = "Пароль должен содержать минимум 12 символов."
+                return
+            }
+            if (password != confirmInput.text.toString()) {
+                authStatus.text = "Пароли не совпадают."
+                return
+            }
+        }
+
+        endpointValue = base
+        getPreferences(MODE_PRIVATE).edit().putString("api_base", base).apply()
+        authButton.isEnabled = false
+        authStatus.text = if (isRegisterMode) "Создаю аккаунт..." else "Проверяю данные..."
+
+        val route = if (isRegisterMode) "/auth/register" else "/auth/login"
+        thread {
+            try {
+                val response = requestJson(
+                    route,
+                    JSONObject().put("email", email).put("password", password)
+                )
+                val token = response.getString("token")
+                val user = response.getJSONObject("user")
+                runOnUiThread {
+                    try {
+                        SecureTokenStore.save(this, token)
+                        authToken = token
+                        userEmail = user.optString("email", email)
+                        sessionId = getPreferences(MODE_PRIVATE)
+                            .getString("session_id:$userEmail", null)
+                            ?: UUID.randomUUID().toString()
+                        getPreferences(MODE_PRIVATE).edit()
+                            .putString("account_email", userEmail)
+                            .putString("session_id:$userEmail", sessionId)
+                            .apply()
+                        showChatScreen()
+                    } catch (error: Exception) {
+                        authButton.isEnabled = true
+                        authStatus.text = "Не удалось безопасно сохранить сессию: \${error.message}"
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    authButton.isEnabled = true
+                    authStatus.text = error.message ?: "Не удалось подключиться к серверу."
+                }
+            }
+        }
+    }
+
+    private fun showChatScreen() {
+        val root = darkRoot()
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val account = makeText("SWIN AI  •  $userEmail", 15f, Color.rgb(190, 175, 255))
+        val logout = makeButton("Выйти") { logout() }
+        header.addView(account, LinearLayout.LayoutParams(0, 52, 1f))
+        header.addView(logout, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            48
+        ))
+
+        endpoint = makeEdit(
+            "HTTPS-адрес сервера",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        ).apply { setText(endpointValue) }
+
+        chatLog = makeText(
+            "SWIN AI 0.5\nАккаунт: $userEmail\nСессия защищена. Напиши сообщение.\n",
+            16f
+        ).apply { setPadding(8, 14, 8, 14) }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(chatLog)
+        }
+
+        chatInput = makeEdit(
+            "Напиши сообщение...",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE,
+            singleLine = false
+        ).apply { maxLines = 4 }
+        sendButton = makeButton("Отправить") { sendMessage() }
+
+        root.addView(header, LinearLayout.LayoutParams(-1, 54))
+        root.addView(endpoint, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(chatInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(sendButton, LinearLayout.LayoutParams(-1, 52))
+        setContentView(root)
+    }
+
+    private fun validateSavedSession() {
+        val token = authToken ?: return
+        thread {
+            try {
+                requestJson("/auth/me", JSONObject(), token, method = "GET")
+            } catch (error: Exception) {
+                if (error is ApiException && error.statusCode == 401) {
+                    runOnUiThread { clearLocalSession("Сессия истекла. Войди снова.") }
+                }
+            }
+        }
     }
 
     private fun sendMessage() {
-        val message = input.text.toString().trim()
+        val message = chatInput.text.toString().trim()
         if (message.isEmpty()) return
-
-        val url = getChatUrl()
-        if (!url.startsWith("https://") || url.contains("....")) {
-            log.append("\nТы: " + message + "\n")
-            val offlineAnswer = OfflineKnowledge.answer(message)
-            if (offlineAnswer != null) {
-                log.append("SWIN AI (офлайн): " + offlineAnswer + "\n")
-            } else {
-                log.append("SWIN AI: в офлайн-справочнике пока нет подходящего материала. Подключи HTTPS-сервер для Transformer и памяти диалога.\n")
-            }
-            input.text.clear()
+        val token = authToken
+        if (token.isNullOrBlank()) {
+            clearLocalSession("Сначала войди в аккаунт.")
             return
         }
 
-        getPreferences(MODE_PRIVATE).edit()
-            .putString("api_base", endpoint.text.toString().trim())
-            .apply()
-        input.text.clear()
-        log.append("\nТы: " + message + "\nSWIN AI: думаю...\n")
-        send.isEnabled = false
+        val base = endpoint.text.toString().trim().trimEnd('/')
+        if (!base.startsWith("https://")) {
+            chatLog.append("\nУкажи HTTPS-адрес API-сервера.\n")
+            return
+        }
+        endpointValue = base
+        getPreferences(MODE_PRIVATE).edit().putString("api_base", base).apply()
+
+        chatInput.text.clear()
+        chatLog.append("\nТы: $message\nSWIN AI: думаю...\n")
+        sendButton.isEnabled = false
 
         thread {
-            val answer = try {
-                val connection = URL(url).openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 15000
-                connection.readTimeout = 60000
+            try {
+                val response = requestJson(
+                    "/chat",
+                    JSONObject().put("message", message).put("session_id", sessionId),
+                    token
+                )
+                val answer = response.optString("answer", "Сервер вернул пустой ответ.")
+                val elapsed = response.optDouble("generation_ms", -1.0)
+                val mode = response.optString("mode", "unknown")
+                val meta = if (elapsed >= 0) "\n[$mode • $elapsed мс]" else "\n[$mode]"
+                runOnUiThread {
+                    chatLog.append("SWIN AI: $answer$meta\n")
+                    sendButton.isEnabled = true
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    if (error is ApiException && error.statusCode == 401) {
+                        clearLocalSession("Сессия истекла. Войди снова.")
+                    } else {
+                        chatLog.append("Ошибка: \${error.message}\n")
+                        sendButton.isEnabled = true
+                    }
+                }
+            }
+        }
+    }
+
+    private fun logout() {
+        val token = authToken
+        if (!token.isNullOrBlank()) {
+            thread {
+                try {
+                    requestJson("/auth/logout", JSONObject(), token)
+                } catch (_: Exception) {
+                    // Local sign-out still clears the token if the server is unreachable.
+                }
+                runOnUiThread { clearLocalSession("Ты вышел из аккаунта.") }
+            }
+        } else {
+            clearLocalSession("Ты вышел из аккаунта.")
+        }
+    }
+
+    private fun clearLocalSession(message: String) {
+        SecureTokenStore.clear(this)
+        authToken = null
+        userEmail = ""
+        sessionId = ""
+        showAuthScreen(message)
+    }
+
+    private fun requestJson(
+        path: String,
+        payload: JSONObject,
+        token: String? = null,
+        method: String = "POST"
+    ): JSONObject {
+        val base = endpointValue.ifBlank {
+            getPreferences(MODE_PRIVATE).getString("api_base", "") ?: ""
+        }.trimEnd('/')
+        if (!base.startsWith("https://")) {
+            throw IllegalStateException("Нужен HTTPS-адрес сервера.")
+        }
+
+        val connection = URL(base + path).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = method
+            connection.connectTimeout = 12000
+            connection.readTimeout = 90000
+            connection.setRequestProperty("Accept", "application/json")
+            if (!token.isNullOrBlank()) {
+                connection.setRequestProperty("Authorization", "Bearer $token")
+            }
+            if (method != "GET") {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                val payload = JSONObject()
-                    .put("message", message)
-                    .put("session_id", sessionId)
                 connection.outputStream.use {
                     it.write(payload.toString().toByteArray(Charsets.UTF_8))
                 }
-                val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-                connection.disconnect()
-                val json = JSONObject(body)
-                if (code in 200..299) {
-                    json.optString("answer", "Сервер вернул пустой ответ.")
-                } else {
-                    json.optString("detail", "Ошибка сервера HTTP " + code)
-                }
-            } catch (error: Exception) {
-                val offlineAnswer = OfflineKnowledge.answer(message)
-                if (offlineAnswer != null) {
-                    "Сервер недоступен — офлайн-ответ:\n" + offlineAnswer
-                } else {
-                    "Ошибка соединения: " + error.toString()
-                }
             }
-            runOnUiThread {
-                log.append("SWIN AI: " + answer + "\n")
-                send.isEnabled = true
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "{}"
+            val json = try {
+                JSONObject(body)
+            } catch (_: Exception) {
+                JSONObject().put("detail", body.ifBlank { "HTTP $code" })
             }
+            if (code !in 200..299) {
+                throw ApiException(code, json.optString("detail", "Ошибка сервера HTTP $code"))
+            }
+            return json
+        } finally {
+            connection.disconnect()
         }
     }
 }
