@@ -21,6 +21,7 @@ on:
       - "server/data/train.txt"
       - "server/data/knowledge.json"
       - "server/data/dialogue.jsonl"
+      - "server/data/coding_dialogue.jsonl"
       - "server/requirements-transformer.txt"
       - "tests/test_transformer.py"
       - "tests/test_prepare_corpus.py"
@@ -56,6 +57,7 @@ jobs:
             --web-max-chars 600000 \
             --max-doc-chars 2500 \
             --oasst-max-pairs 1500
+          python prepare_coding_data.py --max-train 350 --max-validation 80
           python prepare_coding_data.py --max-train 350 --max-validation 80
       - name: Run all tests
         run: python -m unittest discover -s tests -v
