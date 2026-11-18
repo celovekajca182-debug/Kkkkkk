@@ -10,10 +10,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from auth import AuthStore, TOKEN_TTL_SECONDS, validate_email
+from coding_agent import run_code_assist
 from knowledge import KnowledgeBase
 from model import TinyCharRNN
 
-app = FastAPI(title="SWIN AI", version="0.5.0")
+app = FastAPI(title="SWIN AI", version="0.6.0")
 
 database_path = Path(os.getenv("SWIN_DATABASE_PATH", "data/swin.sqlite3"))
 auth_store = AuthStore(database_path)
@@ -77,6 +78,14 @@ class RegisterRequest(AuthRequest):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     session_id: str = Field(min_length=1, max_length=80)
+
+
+class CodeAssistRequest(BaseModel):
+    task: str = Field(min_length=1, max_length=4000)
+    language: str = Field(default="auto", min_length=2, max_length=32)
+    research_web: bool = True
+    show_activity: bool = False
+    project_context: str = Field(default="", max_length=4000)
 
 
 class ClearMemoryRequest(BaseModel):
@@ -212,6 +221,29 @@ def clear_memory(
     memory_key = f"{user['id']}:{request.session_id}"
     conversation_memory.pop(memory_key, None)
     return {"ok": True, "session_id": request.session_id, "memory_turns": 0}
+
+
+@app.post("/code/assist")
+def code_assist(
+    request: CodeAssistRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Research a coding task and return a generated, statically checked draft."""
+    started_at = time.perf_counter()
+    try:
+        result = run_code_assist(
+            task=request.task,
+            language=request.language,
+            transformer_model=transformer_model,
+            research_web=request.research_web,
+            project_context=request.project_context,
+            show_activity=request.show_activity,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    result["elapsed_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+    result["model_loaded"] = transformer_model is not None
+    return result
 
 
 @app.post("/chat")
