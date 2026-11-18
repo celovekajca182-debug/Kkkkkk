@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from coding_agent import (
+    _make_prompt,
     detect_language,
     run_code_assist,
     search_documentation,
@@ -35,6 +36,20 @@ class CodingAgentTests(unittest.TestCase):
         self.assertEqual(good["status"], "passed")
         self.assertEqual(good["method"], "python_ast")
         self.assertEqual(bad["status"], "failed")
+
+    def test_prompt_preserves_task_and_fits_model_context(self):
+        task = "Сделай большую программу. " * 50 + "ВАЖНО: верни полный код класса Player."
+        prompt = _make_prompt(
+            task,
+            "python",
+            [{"title": "Docs", "url": "https://docs.python.org/3/", "snippet": "Документация " * 100}],
+            "Существующий код проекта " * 30,
+            block_size=256,
+        )
+        self.assertLessEqual(len(prompt.encode("utf-8")), 252)
+        self.assertIn("ЗАДАЧА:", prompt)
+        self.assertIn("ВАЖНО:", prompt)
+        self.assertIn("КОД:", prompt)
 
     def test_search_filters_non_https_links(self):
         fake_module = types.SimpleNamespace(
