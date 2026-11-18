@@ -58,7 +58,6 @@ jobs:
             --max-doc-chars 2500 \
             --oasst-max-pairs 1500
           python prepare_coding_data.py --max-train 350 --max-validation 80
-          python prepare_coding_data.py --max-train 350 --max-validation 80
       - name: Run all tests
         run: python -m unittest discover -s tests -v
       - name: Two-stage SWIN training
