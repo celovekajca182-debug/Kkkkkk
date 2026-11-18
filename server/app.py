@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import urllib.request
 from collections import OrderedDict, defaultdict, deque
 from pathlib import Path
 from threading import Lock
@@ -24,6 +25,36 @@ rnn_model = None
 transformer_model = None
 rnn_path = Path(os.getenv("SWIN_MODEL_PATH", "model.npz"))
 transformer_path = Path(os.getenv("SWIN_TRANSFORMER_PATH", "models/swin-transformer.pt"))
+transformer_url = os.getenv(
+    "SWIN_TRANSFORMER_URL",
+    "https://github.com/celovekajca182-debug/Kkkkkk/releases/download/swin-model-latest/swin-transformer.pt",
+)
+
+# Render's filesystem is ephemeral: restore the public checkpoint at each cold start.
+if not transformer_path.is_file() and transformer_url:
+    try:
+        transformer_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = transformer_path.with_suffix(transformer_path.suffix + ".download")
+        request = urllib.request.Request(
+            transformer_url,
+            headers={"User-Agent": "SWIN-AI-Model-Loader/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=90) as response, temporary_path.open("wb") as output:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                output.write(chunk)
+        if temporary_path.stat().st_size < 1024:
+            raise ValueError("Скачанный checkpoint слишком мал.")
+        temporary_path.replace(transformer_path)
+        print(f"SWIN Transformer checkpoint downloaded: {transformer_path}")
+    except Exception as error:
+        print(f"SWIN Transformer download error: {error}")
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 knowledge_path = Path(os.getenv("SWIN_KNOWLEDGE_PATH", "data/knowledge.json"))
 knowledge = KnowledgeBase(knowledge_path)
 
