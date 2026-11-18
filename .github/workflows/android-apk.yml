@@ -9,25 +9,64 @@ on:
       - ".github/workflows/android-apk.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+
+      - name: Run Android unit tests and lint
+        working-directory: android
+        run: gradle --no-daemon testDebugUnitTest lintDebug
+
       - name: Build debug APK
         working-directory: android
         run: gradle --no-daemon assembleDebug
-      - uses: actions/upload-artifact@v4
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          SIZE=$(stat -c%s "$APK")
+          if [ "$SIZE" -lt 100000 ]; then
+            echo "APK is unexpectedly small: $SIZE bytes" >&2
+            exit 1
+          fi
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          test -n "$AAPT"
+          "$AAPT" dump badging "$APK" | tee /tmp/apk-badging.txt
+          grep -q "package: name='com.swinai.app' versionCode='8' versionName='0.7.2'" /tmp/apk-badging.txt
+
+      - name: Upload installable APK artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: swin-ai-debug-apk
+          name: SWIN-AI-Android-APK-v0.7.2
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish APK release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: swin-ai-v0.7.2
+          name: SWIN AI Android v0.7.2
+          body: |
+            SWIN AI Android build v0.7.2.
+
+            Install the APK on Android 6.0 or newer. This is a debug-signed test build.
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          make_latest: true
