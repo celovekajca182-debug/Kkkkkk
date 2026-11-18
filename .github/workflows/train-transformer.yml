@@ -23,6 +23,7 @@ on:
       - "server/requirements-transformer.txt"
       - "tests/test_transformer.py"
       - "tests/test_prepare_corpus.py"
+      - "tests/test_training_corpus.py"
       - ".github/workflows/train-transformer.yml"
 
 permissions:
