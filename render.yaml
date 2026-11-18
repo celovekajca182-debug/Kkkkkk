@@ -6,6 +6,3 @@ services:
     buildCommand: pip install -r requirements-transformer.txt --extra-index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
-    envVars:
-      - key: SWIN_DATABASE_PATH
-        value: /var/data/swin.sqlite3
