@@ -1,6 +1,9 @@
 package com.swinai.app
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.graphics.Color
 import android.text.InputType
@@ -30,7 +33,9 @@ class MainActivity : Activity() {
     private lateinit var languageSpinner: Spinner
     private lateinit var activitySwitch: Switch
     private lateinit var projectContextInput: EditText
+    private lateinit var copyCodeButton: Button
 
+    private var lastGeneratedCode: String = ""
     private var isRegisterMode = false
     private var isCodeMode = false
     private var showCodingActivity = false
@@ -283,10 +288,16 @@ class MainActivity : Activity() {
                 showCodingActivity = checked
             }
         }
+        copyCodeButton = makeButton("Копировать последний код") {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("SWIN AI code", lastGeneratedCode))
+            Toast.makeText(this, "Код скопирован", Toast.LENGTH_SHORT).show()
+        }.apply { isEnabled = false }
         codingControls.addView(codeModeButton, LinearLayout.LayoutParams(-1, 48))
         codingControls.addView(languageSpinner, LinearLayout.LayoutParams(-1, 48))
         codingControls.addView(projectContextInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
         codingControls.addView(activitySwitch, LinearLayout.LayoutParams(-1, 44))
+        codingControls.addView(copyCodeButton, LinearLayout.LayoutParams(-1, 48))
         root.addView(codingControls, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         endpoint = makeEdit(
@@ -295,9 +306,12 @@ class MainActivity : Activity() {
         ).apply { setText(endpointValue) }
 
         chatLog = makeText(
-            "SWIN AI 0.5\nАккаунт: $userEmail\nСессия защищена. Напиши сообщение.\n",
+            "SWIN AI 0.6\nАккаунт: $userEmail\nСессия защищена. Напиши сообщение.\n",
             16f
-        ).apply { setPadding(8, 14, 8, 14) }
+        ).apply {
+            setPadding(8, 14, 8, 14)
+            setTextIsSelectable(true)
+        }
         val scroll = ScrollView(this).apply {
             isFillViewport = true
             addView(chatLog)
@@ -324,6 +338,7 @@ class MainActivity : Activity() {
         languageSpinner.visibility = if (isCodeMode) View.VISIBLE else View.GONE
         projectContextInput.visibility = if (isCodeMode) View.VISIBLE else View.GONE
         activitySwitch.visibility = if (isCodeMode) View.VISIBLE else View.GONE
+        copyCodeButton.visibility = if (isCodeMode) View.VISIBLE else View.GONE
         if (::sendButton.isInitialized) {
             sendButton.text = if (isCodeMode) "Исследовать и создать код" else "Отправить"
         }
@@ -377,7 +392,7 @@ class MainActivity : Activity() {
 
         chatInput.text.clear()
         chatLog.append(
-            if (requestCodeMode) "\nТы • задача: $message\nSWIN AI: изучаю документацию и готовлю код...\n"
+            if (requestCodeMode) "\nТы • задача: $message\nSWIN AI: готовлю результат...\n"
             else "\nТы: $message\nSWIN AI: думаю...\n"
         )
         sendButton.isEnabled = false
@@ -454,6 +469,10 @@ class MainActivity : Activity() {
                         }
                     }
                     runOnUiThread {
+                        if (code.isNotBlank()) {
+                            lastGeneratedCode = code
+                            copyCodeButton.isEnabled = true
+                        }
                         chatLog.append(output.toString() + "\n")
                         sendButton.isEnabled = true
                     }
