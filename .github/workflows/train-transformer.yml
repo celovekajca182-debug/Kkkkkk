@@ -17,6 +17,7 @@ on:
       - "server/transformer.py"
       - "server/train_transformer.py"
       - "server/prepare_corpus.py"
+      - "server/prepare_coding_data.py"
       - "server/data/train.txt"
       - "server/data/knowledge.json"
       - "server/data/dialogue.jsonl"
@@ -55,6 +56,7 @@ jobs:
             --web-max-chars 600000 \
             --max-doc-chars 2500 \
             --oasst-max-pairs 1500
+          python prepare_coding_data.py --max-train 350 --max-validation 80
       - name: Run all tests
         run: python -m unittest discover -s tests -v
       - name: Two-stage SWIN training
@@ -63,7 +65,7 @@ jobs:
           python train_transformer.py \
             --pretrain-epochs ${{ inputs.pretrain_epochs || '10' }} \
             --sft-epochs ${{ inputs.sft_epochs || '4' }} \
-            --block-size 256 \
+            --block-size 512 \
             --output models/swin-transformer.pt \
             --pretrain-output models/swin-transformer-pretrain.pt
       - uses: actions/upload-artifact@v4
@@ -73,4 +75,5 @@ jobs:
             server/models/swin-transformer.pt
             server/models/swin-transformer-pretrain.pt
             server/data/dataset_manifest.json
+            server/data/mbpp_manifest.json
           if-no-files-found: error
