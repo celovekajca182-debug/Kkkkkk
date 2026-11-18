@@ -51,14 +51,26 @@ def russian_letter_ratio(text: str) -> float:
 
 
 def labels_have_rejection(labels) -> bool:
-    """Reject OASST rows explicitly flagged by annotators."""
+    """Reject OASST rows explicitly flagged by annotators.
+
+    Current OASST1 parquet schema stores labels as
+    {"spam": {"value": 0.0, "count": 3}, ...}. The alternate
+    name/value sequence shape is also accepted for older exports.
+    """
     if not isinstance(labels, dict):
         return False
-    names = labels.get("name", []) or []
-    values = labels.get("value", []) or []
-    for name, value in zip(names, values):
+
+    if "name" in labels and "value" in labels:
+        names = labels.get("name", []) or []
+        values = labels.get("value", []) or []
+        candidates = zip(names, values)
+    else:
+        candidates = labels.items()
+
+    for name, details in candidates:
         if str(name).lower() not in REJECT_LABELS:
             continue
+        value = details.get("value", 0) if isinstance(details, dict) else details
         try:
             if float(value) > 0.0:
                 return True
