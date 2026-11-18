@@ -448,18 +448,25 @@ class MainActivity : Activity() {
                                 output.append("]\n")
                             }
                         }
-                        val refs = response.optJSONArray("references")
-                        if (refs != null && refs.length() > 0) {
-                            output.append("\nИсточники:\n")
-                            for (i in 0 until refs.length()) {
-                                val item = refs.optJSONObject(i) ?: continue
-                                output.append("• ")
-                                output.append(item.optString("title"))
-                                output.append(" — ")
-                                output.append(item.optString("url"))
-                                output.append("\n")
-                            }
+                    }
+                    // Research sources remain visible even when the detailed activity log is hidden.
+                    val refs = response.optJSONArray("references")
+                    if (refs != null && refs.length() > 0) {
+                        output.append("\nИсточники документации:\n")
+                        for (i in 0 until refs.length()) {
+                            val item = refs.optJSONObject(i) ?: continue
+                            output.append("• ")
+                            output.append(item.optString("title"))
+                            output.append(" — ")
+                            output.append(item.optString("url"))
+                            output.append("\n")
                         }
+                    }
+                    val elapsed = response.optDouble("elapsed_ms", -1.0)
+                    if (elapsed >= 0) {
+                        output.append("\nВремя обработки: ")
+                        output.append(elapsed)
+                        output.append(" мс")
                     }
                     val warnings = response.optJSONArray("warnings")
                     if (warnings != null) {
