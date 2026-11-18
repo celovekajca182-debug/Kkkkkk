@@ -1,9 +1,15 @@
 import unittest
 
-from prepare_coding_data import valid_example
+from prepare_coding_data import choose_validation_split, valid_example
 
 
 class PrepareCodingDataTests(unittest.TestCase):
+    def test_validation_split_uses_current_mbpp_split_name(self):
+        self.assertEqual(choose_validation_split({"train": [], "validation": []}), "validation")
+        self.assertEqual(choose_validation_split({"train": [], "evaluation": []}), "evaluation")
+        with self.assertRaises(RuntimeError):
+            choose_validation_split({"train": [], "test": []})
+
     def test_keeps_valid_python_task_and_tests(self):
         item = valid_example({
             "task_id": 601,
