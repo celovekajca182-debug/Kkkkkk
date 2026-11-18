@@ -9,12 +9,41 @@ import torch
 from transformer import ByteTokenizer, SWINTransformer, save_transformer
 
 
-def build_corpus(data_path: Path, knowledge_path: Path, dialogue_path: Path) -> str:
+def read_instruction_file(path: Path) -> list[str]:
+    if not path.is_file():
+        return []
+    records = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"Ошибка JSONL в {path}, строка {line_number}: {error}") from error
+        question = str(item.get("question", "")).strip()
+        answer = str(item.get("answer", "")).strip()
+        if question and answer:
+            records.append(f"Пользователь: {question}\nSWIN: {answer}")
+    return records
+
+
+def build_corpus(
+    data_path: Path,
+    knowledge_path: Path,
+    dialogue_path: Path,
+    web_path: Path | None = None,
+    instructions_path: Path | None = None,
+) -> str:
     pieces = [
         "Ты — SWIN AI, самостоятельный русскоязычный помощник по программированию, разработке игр и техническим вопросам.",
         "Отвечай прямо, спокойно и по существу. Не выдумывай факты. Если данных недостаточно, честно обозначь это и предложи проверяемый следующий шаг.",
-        data_path.read_text(encoding="utf-8") if data_path.is_file() else "",
     ]
+
+    if data_path.is_file():
+        pieces.append(data_path.read_text(encoding="utf-8"))
+
+    if web_path is not None and web_path.is_file():
+        pieces.append(web_path.read_text(encoding="utf-8"))
 
     if knowledge_path.is_file():
         entries = json.loads(knowledge_path.read_text(encoding="utf-8"))
@@ -26,22 +55,25 @@ def build_corpus(data_path: Path, knowledge_path: Path, dialogue_path: Path) -> 
                 pieces.append(f"Тема: {title}\nПользователь: {question}\nSWIN: {answer}")
 
     if dialogue_path.is_file():
-        for line_number, line in enumerate(dialogue_path.read_text(encoding="utf-8").splitlines(), 1):
-            if not line.strip():
-                continue
-            try:
-                item = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise ValueError(f"Ошибка JSONL в строке {line_number}: {error}") from error
-            question = str(item.get("question", "")).strip()
-            answer = str(item.get("answer", "")).strip()
-            if question and answer:
-                pieces.append(f"Пользователь: {question}\nSWIN: {answer}")
+        pieces.extend(read_instruction_file(dialogue_path))
 
-    return "\n\n".join(pieces).strip() + "\n"
+    if instructions_path is not None:
+        pieces.extend(read_instruction_file(instructions_path))
+
+    return "\n\n".join(piece for piece in pieces if piece.strip()).strip() + "\n"
+
+
+def build_validation_corpus(web_path: Path, instructions_path: Path) -> str:
+    pieces = []
+    if web_path.is_file():
+        pieces.append(web_path.read_text(encoding="utf-8"))
+    pieces.extend(read_instruction_file(instructions_path))
+    return "\n\n".join(piece for piece in pieces if piece.strip()).strip() + "\n"
 
 
 def sample_batch(data: torch.Tensor, batch_size: int, block_size: int, device: torch.device):
+    if data.numel() <= block_size + 1:
+        raise ValueError("Недостаточно данных для формирования обучающего блока.")
     starts = torch.randint(0, data.numel() - block_size - 1, (batch_size,))
     x = torch.stack([data[start:start + block_size] for start in starts])
     y = torch.stack([data[start + 1:start + block_size + 1] for start in starts])
@@ -64,14 +96,18 @@ def estimate_loss(model, train_data, val_data, batch_size, block_size, device, s
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train SWIN AI's own byte-level Transformer weights.")
+    parser = argparse.ArgumentParser(description="Train SWIN AI's own byte-level Transformer.")
     parser.add_argument("--data", default="data/train.txt")
     parser.add_argument("--knowledge", default="data/knowledge.json")
     parser.add_argument("--dialogue", default="data/dialogue.jsonl")
+    parser.add_argument("--web-train", default="data/fineweb2_ru_train.txt")
+    parser.add_argument("--web-validation", default="data/fineweb2_ru_validation.txt")
+    parser.add_argument("--instructions-train", default="data/openassistant_ru_train.jsonl")
+    parser.add_argument("--instructions-validation", default="data/openassistant_ru_validation.jsonl")
     parser.add_argument("--output", default="models/swin-transformer.pt")
-    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--epochs", type=int, default=15)
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--block-size", type=int, default=128)
+    parser.add_argument("--block-size", type=int, default=256)
     parser.add_argument("--d-model", type=int, default=96)
     parser.add_argument("--heads", type=int, default=4)
     parser.add_argument("--layers", type=int, default=2)
@@ -84,6 +120,8 @@ def main():
         parser.error("--batch-size должен быть от 4 до 128")
     if args.d_model % args.heads != 0:
         parser.error("--d-model должен делиться на --heads")
+    if args.block_size < 32:
+        parser.error("--block-size должен быть не меньше 32")
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -91,19 +129,43 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Устройство обучения: {device}")
 
-    corpus = build_corpus(Path(args.data), Path(args.knowledge), Path(args.dialogue))
-    encoded = ByteTokenizer.encode(corpus)
-    if len(encoded) < args.block_size * 4:
-        parser.error("Корпус слишком мал для выбранного block-size. Добавь проверенные примеры.")
-    if len(set(encoded)) < 20:
+    train_corpus = build_corpus(
+        Path(args.data),
+        Path(args.knowledge),
+        Path(args.dialogue),
+        Path(args.web_train),
+        Path(args.instructions_train),
+    )
+    validation_corpus = build_validation_corpus(
+        Path(args.web_validation),
+        Path(args.instructions_validation),
+    )
+    train_encoded = ByteTokenizer.encode(train_corpus)
+    if len(train_encoded) < args.block_size * 4:
+        parser.error("Обучающий корпус слишком мал. Сначала подготовь открытые датасеты.")
+    if len(set(train_encoded)) < 20:
         parser.error("В корпусе слишком мало разных байтов.")
 
-    split = max(args.block_size + 2, int(len(encoded) * 0.9))
-    split = min(split, len(encoded) - args.block_size - 2)
-    train_data = torch.tensor(encoded[:split], dtype=torch.long)
-    val_data = torch.tensor(encoded[split:], dtype=torch.long)
-    print(f"Корпус: {len(encoded):,} UTF-8 байт; train={len(train_data):,}; validation={len(val_data):,}")
-    print(f"Архитектура: byte Transformer, d_model={args.d_model}, heads={args.heads}, layers={args.layers}, block={args.block_size}")
+    if validation_corpus.strip():
+        validation_encoded = ByteTokenizer.encode(validation_corpus)
+        if len(validation_encoded) <= args.block_size + 1:
+            parser.error("Отложенный validation-корпус слишком мал.")
+        train_data = torch.tensor(train_encoded, dtype=torch.long)
+        val_data = torch.tensor(validation_encoded, dtype=torch.long)
+    else:
+        split = max(args.block_size + 2, int(len(train_encoded) * 0.9))
+        split = min(split, len(train_encoded) - args.block_size - 2)
+        train_data = torch.tensor(train_encoded[:split], dtype=torch.long)
+        val_data = torch.tensor(train_encoded[split:], dtype=torch.long)
+
+    print(
+        f"Корпус: train={train_data.numel():,} UTF-8 байт; "
+        f"validation={val_data.numel():,} UTF-8 байт"
+    )
+    print(
+        f"Архитектура: byte Transformer, d_model={args.d_model}, "
+        f"heads={args.heads}, layers={args.layers}, block={args.block_size}"
+    )
 
     model = SWINTransformer(
         block_size=args.block_size,
@@ -113,7 +175,10 @@ def main():
         dropout=0.1,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=0.01)
-    batches_per_epoch = max(10, min(80, math.ceil(len(train_data) / (args.batch_size * args.block_size)) * 2))
+    batches_per_epoch = max(
+        10,
+        min(80, math.ceil(len(train_data) / (args.batch_size * args.block_size)) * 2),
+    )
     best_validation = float("inf")
 
     output_path = Path(args.output)
@@ -149,8 +214,11 @@ def main():
     print(f"Лучшие validation loss: {best_validation:.4f}")
     print(f"Собственные веса Transformer сохранены: {output_path}")
     model = model.to("cpu").eval()
-    sample = model.generate("Пользователь: Как исправить ошибку Godot?\nSWIN:", max_new_tokens=120)
-    print("Пробная генерация:", sample[:300])
+    sample = model.generate(
+        "Пользователь: Как исправить ошибку Godot?\nSWIN:",
+        max_new_tokens=160,
+    )
+    print("Пробная генерация:", sample[:400])
 
 
 if __name__ == "__main__":
