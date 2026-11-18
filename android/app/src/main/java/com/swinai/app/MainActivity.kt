@@ -259,15 +259,13 @@ class MainActivity : Activity() {
         }
         languageSpinner = Spinner(this).apply {
             val languages = listOf(
-                "Автоопределение",
-                "Python",
-                "Godot 4 / GDScript",
-                "Kotlin / Android",
-                "JavaScript",
-                "TypeScript",
-                "HTML",
-                "CSS",
-                "JSON"
+                "Автоопределение", "Python", "Godot 4 / GDScript", "Kotlin",
+                "Java", "JavaScript", "TypeScript", "C", "C++", "C#",
+                "Go", "Rust", "PHP", "Ruby", "Swift", "Dart", "SQL",
+                "Bash / Shell", "PowerShell", "Lua", "R", "Scala", "Perl",
+                "Elixir", "Haskell", "HTML", "CSS", "XML", "JSON", "YAML",
+                "TOML", "Dockerfile", "GLSL / Shaders", "Solidity",
+                "Другой язык / свой формат"
             )
             adapter = ArrayAdapter(
                 this@MainActivity,
@@ -306,7 +304,7 @@ class MainActivity : Activity() {
         ).apply { setText(endpointValue) }
 
         chatLog = makeText(
-            "SWIN AI 0.6\nАккаунт: $userEmail\nСессия защищена. Напиши сообщение.\n",
+            "SWIN AI 0.7.0\nАккаунт: $userEmail\nПоиск по открытому интернету • статическая перепроверка кода.\n",
             16f
         ).apply {
             setPadding(8, 14, 8, 14)
@@ -383,7 +381,11 @@ class MainActivity : Activity() {
 
         val codingLanguageValues = listOf(
             "auto", "python", "gdscript", "kotlin",
-            "javascript", "typescript", "html", "css", "json"
+            "java", "javascript", "typescript", "c", "cpp", "csharp",
+            "go", "rust", "php", "ruby", "swift", "dart", "sql",
+            "bash", "powershell", "lua", "r", "scala", "perl",
+            "elixir", "haskell", "html", "css", "xml", "json", "yaml",
+            "toml", "dockerfile", "glsl", "solidity", "other"
         )
         val selectedCodingLanguage = codingLanguageValues.getOrElse(languageSpinner.selectedItemPosition) { "auto" }
         val includeCodingActivity = showCodingActivity
@@ -414,8 +416,31 @@ class MainActivity : Activity() {
                     output.append(response.optString("status", "unknown"))
                     val validation = response.optJSONObject("validation")
                     if (validation != null) {
-                        output.append("\nПроверка: ")
+                        output.append("\nПроверка синтаксиса: ")
                         output.append(validation.optString("message", "не выполнена"))
+                    }
+                    val verification = response.optJSONObject("verification")
+                    if (verification != null) {
+                        output.append("\n\nПЕРЕПРОВЕРКА:")
+                        val checkNames = listOf("research", "syntax", "cross_check", "runtime_tests")
+                        val checkLabels = mapOf(
+                            "research" to "Поиск в интернете",
+                            "syntax" to "Статический анализ",
+                            "cross_check" to "Сверка источников",
+                            "runtime_tests" to "Запуск тестов"
+                        )
+                        for (key in checkNames) {
+                            val check = verification.optJSONObject(key) ?: continue
+                            output.append("\n• ")
+                            output.append(checkLabels[key] ?: key)
+                            output.append(" — ")
+                            output.append(check.optString("status", "unknown"))
+                            val detail = check.optString("message", "")
+                            if (detail.isNotBlank()) {
+                                output.append(": ")
+                                output.append(detail)
+                            }
+                        }
                     }
                     val code = response.optString("code", "")
                     if (code.isNotBlank()) {
@@ -456,6 +481,8 @@ class MainActivity : Activity() {
                         for (i in 0 until refs.length()) {
                             val item = refs.optJSONObject(i) ?: continue
                             output.append("• ")
+                            output.append(item.optString("source_type", "Веб-источник"))
+                            output.append(": ")
                             output.append(item.optString("title"))
                             output.append(" — ")
                             output.append(item.optString("url"))
