@@ -227,16 +227,18 @@ def _make_prompt(task: str, language: str, sources: list[dict[str, str]],
     task_text = re.sub(r"\s+", " ", task).strip()
     task_bytes = task_text.encode("utf-8")
     prefix_bytes = len(prefix.encode("utf-8"))
-    task_budget = max(64, byte_limit - prefix_bytes - 20)
+    suffix_bytes = len("ЗАДАЧА: \nКОД:".encode("utf-8"))
+    task_budget = max(64, byte_limit - prefix_bytes - suffix_bytes - 8)
     if len(task_bytes) > task_budget:
         # Preserve both the start and the explicit constraints at the end of long tasks.
-        head_budget = int(task_budget * 0.72)
-        tail_budget = task_budget - head_budget
+        usable_budget = max(32, task_budget - 5)
+        head_budget = int(usable_budget * 0.72)
+        tail_budget = usable_budget - head_budget
         head = task_bytes[:head_budget].decode("utf-8", errors="ignore")
         tail = task_bytes[-tail_budget:].decode("utf-8", errors="ignore")
         task_text = head + " ... " + tail
 
-    used = len(prefix.encode("utf-8")) + len(task_text.encode("utf-8")) + len("ЗАДАЧА: \nКОД:")
+    used = prefix_bytes + len(task_text.encode("utf-8")) + suffix_bytes
     remaining = max(0, byte_limit - used)
     context = re.sub(r"\s+", " ", project_context).strip()
     context_budget = min(120, remaining // 2)
