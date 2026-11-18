@@ -47,6 +47,7 @@ def build_instruction_corpus(
     dialogue_path: Path,
     instructions_path: Path,
     coding_path: Path | None = None,
+    project_examples_path: Path | None = None,
 ) -> str:
     pieces = [
         "Ты — SWIN AI, самостоятельный русскоязычный помощник по программированию, разработке игр и техническим вопросам.",
@@ -64,6 +65,8 @@ def build_instruction_corpus(
     pieces.extend(read_instruction_file(instructions_path))
     if coding_path is not None:
         pieces.extend(read_instruction_file(coding_path))
+    if project_examples_path is not None:
+        pieces.extend(read_instruction_file(project_examples_path))
     return join_corpus(*pieces)
 
 
@@ -176,6 +179,7 @@ def main():
     parser.add_argument("--instructions-validation", default="data/openassistant_ru_validation.jsonl")
     parser.add_argument("--coding-train", default="data/mbpp_python_train.jsonl")
     parser.add_argument("--coding-validation", default="data/mbpp_python_validation.jsonl")
+    parser.add_argument("--project-examples", default="data/coding_dialogue.jsonl")
     parser.add_argument("--output", default="models/swin-transformer.pt")
     parser.add_argument("--pretrain-output", default="models/swin-transformer-pretrain.pt")
     parser.add_argument("--pretrain-epochs", type=int, default=10)
@@ -241,6 +245,7 @@ def main():
         Path(args.dialogue),
         Path(args.instructions_train),
         Path(args.coding_train),
+        Path(args.project_examples),
     )
     sft_validation = join_corpus(
         *read_instruction_file(Path(args.instructions_validation)),
