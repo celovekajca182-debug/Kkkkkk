@@ -50,11 +50,11 @@ class TrainingCorpusTests(unittest.TestCase):
             (root / "dialogue.jsonl").write_text("", encoding="utf-8")
             (root / "oasst.jsonl").write_text("", encoding="utf-8")
             (root / "mbpp.jsonl").write_text(
-                '{"question":"Задача Python: сложить два числа","answer":"def add(a, b):\\n    return a + b"}\\n',
+                '{"question":"Задача Python: сложить два числа","answer":"def add(a, b):\\n    return a + b"}\n',
                 encoding="utf-8",
             )
             (root / "project.jsonl").write_text(
-                '{"question":"Как двигать CharacterBody2D?","answer":"extends CharacterBody2D"}\\n',
+                '{"question":"Как двигать CharacterBody2D?","answer":"extends CharacterBody2D"}\n',
                 encoding="utf-8",
             )
             sft = build_instruction_corpus(
