@@ -251,8 +251,8 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             answer = transformer_model.generate(
                 prompt,
                 max_new_tokens=160,
-                temperature=0.68,
-                top_k=24,
+                temperature=0.0,
+                top_k=1,
                 stop_at_newline=True,
             ).strip()
             answer = answer.split("\nПользователь:", 1)[0].strip()
