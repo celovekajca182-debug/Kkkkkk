@@ -44,13 +44,14 @@ class TrainingCorpusTests(unittest.TestCase):
         self.assertNotIn("веб-документ", sft)
 
     def test_tensor_splits_use_distinct_validation_corpus(self):
-        train = "А" * 1000
-        validation = "Б" * 500
+        alphabet = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
+        train = alphabet * 40
+        validation = "БВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯА" * 20
         train_data, validation_data = build_tensor_splits(train, validation, block_size=32)
         self.assertGreater(train_data.numel(), 900)
         self.assertGreater(validation_data.numel(), 400)
-        self.assertEqual(int(train_data[0]), ord("А"))
-        self.assertEqual(int(validation_data[0]), ord("Б"))
+        self.assertEqual(train_data[:2].tolist(), [208, 144])
+        self.assertEqual(validation_data[:2].tolist(), [208, 145])
 
 
 if __name__ == "__main__":
