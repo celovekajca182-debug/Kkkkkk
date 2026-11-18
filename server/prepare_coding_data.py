@@ -1,7 +1,7 @@
 """Prepare a small, license-attributed Python code-generation set from MBPP.
 
 Uses only the sanitized human-reviewed configuration and preserves the official
-train/evaluation split. It does not execute dataset code or its tests.
+training and held-out validation split. It does not execute dataset code or its tests.
 """
 import argparse
 import ast
@@ -34,6 +34,18 @@ def valid_example(row: dict) -> dict | None:
     }
 
 
+def choose_validation_split(dataset) -> str:
+    """Support the split names exposed by MBPP dataset revisions."""
+    if "validation" in dataset:
+        return "validation"
+    if "evaluation" in dataset:
+        return "evaluation"
+    raise RuntimeError(
+        "В MBPP sanitized не найден validation/evaluation split; "
+        f"получены: {list(dataset.keys())}"
+    )
+
+
 def write_jsonl(path: Path, rows: list[dict]):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
@@ -54,11 +66,12 @@ def main():
         raise RuntimeError("Установи datasets для загрузки MBPP.") from error
 
     dataset = load_dataset("google-research-datasets/mbpp", "sanitized")
-    if "train" not in dataset or "evaluation" not in dataset:
+    if "train" not in dataset:
         raise RuntimeError(
-            "В MBPP sanitized ожидались официальные split train и evaluation; "
+            "В MBPP sanitized не найден train split; "
             f"получены: {list(dataset.keys())}"
         )
+    validation_split = choose_validation_split(dataset)
 
     train_rows = []
     for row in dataset["train"]:
@@ -69,7 +82,7 @@ def main():
             break
 
     validation_rows = []
-    for row in dataset["evaluation"]:
+    for row in dataset[validation_split]:
         item = valid_example(row)
         if item:
             validation_rows.append(item)
@@ -93,6 +106,7 @@ def main():
         "source": "https://huggingface.co/datasets/google-research-datasets/mbpp",
         "paper": "https://arxiv.org/abs/2108.07732",
         "train_examples": len(train_rows),
+        "validation_split": validation_split,
         "validation_examples": len(validation_rows),
         "filter": "AST parse only; no example code or test code was executed.",
         "notice": (
