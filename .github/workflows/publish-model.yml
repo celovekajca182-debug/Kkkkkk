@@ -1,0 +1,37 @@
+name: Publish existing SWIN checkpoint
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/publish-model.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download latest successful training artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: swin-ai-transformer-weights
+          run-id: 44350877446
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: model-artifact
+      - name: Verify checkpoint
+        run: |
+          test -s model-artifact/models/swin-transformer.pt
+          ls -lh model-artifact/models/swin-transformer.pt
+      - name: Publish model release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: swin-model-latest
+          name: SWIN AI model checkpoint
+          target_commitish: ${{ github.sha }}
+          files: model-artifact/models/swin-transformer.pt
+          overwrite_files: true
+          make_latest: false
