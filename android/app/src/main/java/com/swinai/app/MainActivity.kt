@@ -29,6 +29,7 @@ class MainActivity : Activity() {
     private lateinit var codeModeButton: Button
     private lateinit var languageSpinner: Spinner
     private lateinit var activitySwitch: Switch
+    private lateinit var projectContextInput: EditText
 
     private var isRegisterMode = false
     private var isCodeMode = false
@@ -269,6 +270,11 @@ class MainActivity : Activity() {
                 languages
             )
         }
+        projectContextInput = makeEdit(
+            "Текущий код или структура проекта (необязательно)",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE,
+            singleLine = false
+        ).apply { maxLines = 4 }
         activitySwitch = Switch(this).apply {
             text = "Показывать этапы поиска и проверки"
             setTextColor(Color.LTGRAY)
@@ -279,6 +285,7 @@ class MainActivity : Activity() {
         }
         codingControls.addView(codeModeButton, LinearLayout.LayoutParams(-1, 48))
         codingControls.addView(languageSpinner, LinearLayout.LayoutParams(-1, 48))
+        codingControls.addView(projectContextInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
         codingControls.addView(activitySwitch, LinearLayout.LayoutParams(-1, 44))
         root.addView(codingControls, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
 
@@ -315,6 +322,7 @@ class MainActivity : Activity() {
     private fun updateCodingControls() {
         codeModeButton.text = if (isCodeMode) "Режим: Разработка кода" else "Режим: Чат"
         languageSpinner.visibility = if (isCodeMode) View.VISIBLE else View.GONE
+        projectContextInput.visibility = if (isCodeMode) View.VISIBLE else View.GONE
         activitySwitch.visibility = if (isCodeMode) View.VISIBLE else View.GONE
         if (::sendButton.isInitialized) {
             sendButton.text = if (isCodeMode) "Исследовать и создать код" else "Отправить"
@@ -380,6 +388,7 @@ class MainActivity : Activity() {
                         .put("language", selectedCodingLanguage)
                         .put("research_web", true)
                         .put("show_activity", includeCodingActivity)
+                        .put("project_context", projectContextInput.text.toString().take(4000))
                     val response = requestJson("/code/assist", payload, token)
                     val output = StringBuilder()
                     output.append("\nSWIN AI • РЕЖИМ РАЗРАБОТКИ\n")
