@@ -43,6 +43,30 @@ class TrainingCorpusTests(unittest.TestCase):
         self.assertIn("Пользователь: Что это?", sft)
         self.assertNotIn("веб-документ", sft)
 
+    def test_project_code_examples_are_included_in_instruction_tuning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "knowledge.json").write_text("[]", encoding="utf-8")
+            (root / "dialogue.jsonl").write_text("", encoding="utf-8")
+            (root / "oasst.jsonl").write_text("", encoding="utf-8")
+            (root / "mbpp.jsonl").write_text(
+                '{"question":"Задача Python: сложить два числа","answer":"def add(a, b):\\n    return a + b"}\\n',
+                encoding="utf-8",
+            )
+            (root / "project.jsonl").write_text(
+                '{"question":"Как двигать CharacterBody2D?","answer":"extends CharacterBody2D"}\\n',
+                encoding="utf-8",
+            )
+            sft = build_instruction_corpus(
+                root / "knowledge.json",
+                root / "dialogue.jsonl",
+                root / "oasst.jsonl",
+                root / "mbpp.jsonl",
+                root / "project.jsonl",
+            )
+        self.assertIn("def add", sft)
+        self.assertIn("CharacterBody2D", sft)
+
     def test_tensor_splits_use_distinct_validation_corpus(self):
         alphabet = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
         train = alphabet * 40
