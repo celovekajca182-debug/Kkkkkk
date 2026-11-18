@@ -27,6 +27,17 @@ class SWINTransformerTests(unittest.TestCase):
         )
         self.model.eval()
 
+    def test_inference_buffers_cover_full_context(self):
+        self.assertEqual(tuple(self.model.position_ids.shape), (24,))
+        self.assertEqual(tuple(self.model.causal_mask.shape), (24, 24))
+        self.assertTrue(self.model.causal_mask[0, 1])
+        self.assertFalse(self.model.causal_mask[1, 0])
+
+    def test_greedy_generation_is_deterministic(self):
+        first = self.model.generate("Пользователь:", max_new_tokens=12, temperature=0)
+        second = self.model.generate("Пользователь:", max_new_tokens=12, temperature=0)
+        self.assertEqual(first, second)
+
     def test_forward_and_loss_shapes(self):
         x = torch.randint(0, 256, (2, 16))
         y = torch.randint(0, 256, (2, 16))
