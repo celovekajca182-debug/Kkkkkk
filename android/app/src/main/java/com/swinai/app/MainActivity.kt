@@ -1,6 +1,7 @@
 package com.swinai.app
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -32,6 +33,8 @@ class MainActivity : Activity() {
     private lateinit var authStatus: TextView
     private lateinit var authButton: Button
     private lateinit var chatLog: TextView
+    private lateinit var chatMessages: LinearLayout
+    private lateinit var chatScroll: ScrollView
     private lateinit var chatInput: EditText
     private lateinit var sendButton: Button
     private lateinit var codeModeButton: Button
@@ -464,117 +467,236 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun chatDp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    private fun chatBg(color: Int, radius: Int, stroke: Int? = null) = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = chatDp(radius).toFloat()
+        setColor(color)
+        if (stroke != null) setStroke(chatDp(1), stroke)
+    }
+
+    private fun appendChatMessage(role: String, value: String, code: Boolean = false) {
+        if (!::chatMessages.isInitialized) return
+        val user = role == "user"
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = if (user) Gravity.END else Gravity.START
+            setPadding(0, chatDp(6), 0, chatDp(6))
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(14), chatDp(11), chatDp(14), chatDp(11))
+            background = if (user) chatBg(Color.rgb(237, 230, 219), 17)
+                else chatBg(Color.rgb(255, 254, 251), 16, Color.rgb(231, 226, 217))
+        }
+        val tag = makeText(if (user) "ВЫ" else "SWIN", 10f,
+            if (user) Color.rgb(139, 105, 84) else Color.rgb(177, 105, 79)).apply {
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            letterSpacing = 0.12f
+        }
+        val body = makeText(value, if (code) 13f else 15f, Color.rgb(43, 42, 38)).apply {
+            setLineSpacing(chatDp(3).toFloat(), 1f)
+            setTextIsSelectable(true)
+            if (code) {
+                typeface = Typeface.create("monospace", Typeface.NORMAL)
+                background = chatBg(Color.rgb(243, 241, 235), 9)
+                setPadding(chatDp(9), chatDp(9), chatDp(9), chatDp(9))
+            }
+        }
+        card.addView(tag)
+        card.addView(View(this), LinearLayout.LayoutParams(1, chatDp(5)))
+        card.addView(body)
+        val maxW = (resources.displayMetrics.widthPixels * 0.88f).toInt()
+        row.addView(card, LinearLayout.LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT))
+        chatMessages.addView(row, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+        chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun showChatSettings() {
+        val field = EditText(this).apply {
+            setText(endpointValue)
+            hint = "https://адрес-сервера"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Подключение")
+            .setMessage("Адрес API-сервера")
+            .setView(field)
+            .setPositiveButton("Сохранить") { _, _ ->
+                val v = field.text.toString().trim().trimEnd('/')
+                if (v.startsWith("https://")) {
+                    endpointValue = v
+                    endpoint.setText(v)
+                    getPreferences(MODE_PRIVATE).edit().putString("api_base", v).apply()
+                    Toast.makeText(this, "Адрес сохранён", Toast.LENGTH_SHORT).show()
+                } else Toast.makeText(this, "Нужен HTTPS-адрес", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Выйти") { _, _ -> logout() }
+            .setNegativeButton("Закрыть", null)
+            .show()
+    }
+
     private fun showChatScreen() {
-        val root = darkRoot()
+        val bg = Color.rgb(250, 248, 243)
+        val ink = Color.rgb(43, 42, 38)
+        val muted = Color.rgb(126, 122, 113)
+        val accent = Color.rgb(190, 111, 82)
+        window.statusBarColor = bg
+        window.navigationBarColor = bg
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
+            View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(16), chatDp(6), chatDp(16), chatDp(8))
+            setBackgroundColor(bg)
+        }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val account = makeText("SWIN AI  •  $userEmail", 15f, Color.rgb(190, 175, 255))
-        val logout = makeButton("Выйти") { logout() }
-        header.addView(account, LinearLayout.LayoutParams(0, 52, 1f))
-        header.addView(logout, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            48
-        ))
-
-        val codingControls = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val brand = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        brand.addView(makeText("SWIN AI", 19f, ink).apply {
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        })
+        brand.addView(makeText("Ваш AI-помощник", 11f, muted))
+        header.addView(brand, LinearLayout.LayoutParams(0, chatDp(52), 1f))
+        val codeMode = TextView(this).apply {
+            text = if (isCodeMode) "Код ✓" else "Код"
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(accent)
+            setPadding(chatDp(14), 0, chatDp(14), 0)
+            background = chatBg(Color.rgb(245, 237, 229), 18)
+            setOnClickListener {
+                isCodeMode = !isCodeMode
+                updateCodingControls()
+                text = if (isCodeMode) "Код ✓" else "Код"
+            }
         }
-        codeModeButton = makeButton("Режим: Чат") {
+        val settings = TextView(this).apply {
+            text = "⋯"
+            textSize = 26f
+            gravity = Gravity.CENTER
+            setTextColor(ink)
+            setOnClickListener { showChatSettings() }
+        }
+        header.addView(codeMode, LinearLayout.LayoutParams(-2, chatDp(40)))
+        header.addView(settings, LinearLayout.LayoutParams(chatDp(42), chatDp(44)))
+        root.addView(header)
+
+        endpoint = makeEdit("HTTPS-адрес сервера",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI).apply {
+            setText(endpointValue)
+            visibility = View.GONE
+        }
+
+        val toolsPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(10), chatDp(7), chatDp(10), chatDp(7))
+            background = chatBg(Color.rgb(255, 254, 251), 14, Color.rgb(231, 226, 217))
+        }
+        codeModeButton = makeButton("Параметры кода") {
             isCodeMode = !isCodeMode
             updateCodingControls()
         }
         languageSpinner = Spinner(this).apply {
-            val languages = listOf(
-                "Автоопределение", "Python", "Godot 4 / GDScript", "Kotlin",
-                "Java", "JavaScript", "TypeScript", "C", "C++", "C#",
-                "Go", "Rust", "PHP", "Ruby", "Swift", "Dart", "SQL",
-                "Bash / Shell", "PowerShell", "Lua", "R", "Scala", "Perl",
-                "Elixir", "Haskell", "HTML", "CSS", "XML", "JSON", "YAML",
-                "TOML", "Dockerfile", "GLSL / Shaders", "Solidity",
-                "Другой язык / свой формат"
-            )
-            adapter = ArrayAdapter(
-                this@MainActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                languages
-            )
+            val langs = listOf("Автоопределение","Python","Godot 4 / GDScript","Kotlin","Java","JavaScript","TypeScript","C","C++","C#","Go","Rust","PHP","Ruby","Swift","Dart","SQL","Bash / Shell","PowerShell","Lua","R","Scala","Perl","Elixir","Haskell","HTML","CSS","XML","JSON","YAML","TOML","Dockerfile","GLSL / Shaders","Solidity","Другой язык")
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, langs)
         }
-        projectContextInput = makeEdit(
-            "Текущий код или структура проекта (необязательно)",
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE,
-            singleLine = false
-        ).apply { maxLines = 4 }
+        projectContextInput = makeEdit("Код или структура проекта (необязательно)",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE, false).apply { maxLines = 3 }
         activitySwitch = Switch(this).apply {
-            text = "Показывать этапы поиска и проверки"
-            setTextColor(Color.LTGRAY)
-            isChecked = false
-            setOnCheckedChangeListener { _, checked ->
-                showCodingActivity = checked
-            }
+            text = "Показывать этапы проверки"
+            setTextColor(muted)
+            setOnCheckedChangeListener { _, checked -> showCodingActivity = checked }
         }
-        copyCodeButton = makeButton("Копировать последний код") {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("SWIN AI code", lastGeneratedCode))
+        copyCodeButton = makeButton("Скопировать последний код") {
+            val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cb.setPrimaryClip(ClipData.newPlainText("SWIN AI code", lastGeneratedCode))
             Toast.makeText(this, "Код скопирован", Toast.LENGTH_SHORT).show()
         }.apply { isEnabled = false }
-        codingControls.addView(codeModeButton, LinearLayout.LayoutParams(-1, 48))
-        codingControls.addView(languageSpinner, LinearLayout.LayoutParams(-1, 48))
-        codingControls.addView(projectContextInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
-        codingControls.addView(activitySwitch, LinearLayout.LayoutParams(-1, 44))
-        codingControls.addView(copyCodeButton, LinearLayout.LayoutParams(-1, 48))
-        root.addView(codingControls, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+        toolsPanel.addView(languageSpinner, LinearLayout.LayoutParams(-1, chatDp(44)))
+        toolsPanel.addView(projectContextInput, LinearLayout.LayoutParams(-1, -2))
+        toolsPanel.addView(activitySwitch, LinearLayout.LayoutParams(-1, chatDp(40)))
+        toolsPanel.addView(copyCodeButton, LinearLayout.LayoutParams(-1, chatDp(42)))
+        root.addView(toolsPanel, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = chatDp(5); bottomMargin = chatDp(4)
+        })
 
-        endpoint = makeEdit(
-            "HTTPS-адрес сервера",
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        ).apply { setText(endpointValue) }
-
-        chatLog = makeText(
-            "SWIN AI 0.7.0\nАккаунт: $userEmail\nПоиск по открытому интернету • статическая перепроверка кода.\n",
-            16f
-        ).apply {
-            setPadding(8, 14, 8, 14)
-            setTextIsSelectable(true)
+        chatMessages = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, chatDp(10), 0, chatDp(16))
         }
-        val scroll = ScrollView(this).apply {
+        chatScroll = ScrollView(this).apply {
             isFillViewport = true
-            addView(chatLog)
+            isVerticalScrollBarEnabled = false
+            addView(chatMessages, ViewGroup.LayoutParams(-1, -2))
         }
+        root.addView(chatScroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        chatInput = makeEdit(
-            "Напиши сообщение...",
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE,
-            singleLine = false
-        ).apply { maxLines = 4 }
-        sendButton = makeButton("Отправить") { sendMessage() }
-
-        root.addView(header, LinearLayout.LayoutParams(-1, 54))
-        root.addView(endpoint, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(chatInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
-        root.addView(sendButton, LinearLayout.LayoutParams(-1, 52))
+        val composer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(chatDp(8), chatDp(6), chatDp(6), chatDp(6))
+            background = chatBg(Color.rgb(255, 254, 251), 22, Color.rgb(224, 219, 210))
+            elevation = chatDp(2).toFloat()
+        }
+        val plus = TextView(this).apply {
+            text = "+"
+            textSize = 25f
+            gravity = Gravity.CENTER
+            setTextColor(muted)
+            setOnClickListener {
+                isCodeMode = !isCodeMode
+                updateCodingControls()
+                codeMode.text = if (isCodeMode) "Код ✓" else "Код"
+            }
+        }
+        chatInput = makeEdit("Напишите сообщение…",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE, false).apply {
+            background = ColorDrawable(Color.TRANSPARENT)
+            setPadding(chatDp(8), chatDp(7), chatDp(8), chatDp(7))
+            minHeight = chatDp(46)
+            maxLines = 5
+            textSize = 15f
+            setTextColor(ink)
+            setHintTextColor(Color.rgb(154, 149, 139))
+        }
+        sendButton = makeButton("↑") { sendMessage() }.apply {
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            background = chatBg(accent, 15)
+            minWidth = chatDp(46)
+            minimumWidth = chatDp(46)
+            minHeight = chatDp(46)
+            stateListAnimator = null
+        }
+        composer.addView(plus, LinearLayout.LayoutParams(chatDp(36), chatDp(46)))
+        composer.addView(chatInput, LinearLayout.LayoutParams(0, -2, 1f))
+        composer.addView(sendButton, LinearLayout.LayoutParams(chatDp(46), chatDp(46)))
+        root.addView(composer, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = chatDp(8); bottomMargin = chatDp(5)
+        })
+        chatLog = makeText("", 14f)
         updateCodingControls()
         setContentView(root)
+        appendChatMessage("assistant", "Привет! Я SWIN AI. Чем могу помочь?")
     }
 
     private fun updateCodingControls() {
-        codeModeButton.text = if (isCodeMode) "Режим: Разработка кода" else "Режим: Чат"
-        languageSpinner.visibility = if (isCodeMode) View.VISIBLE else View.GONE
-        projectContextInput.visibility = if (isCodeMode) View.VISIBLE else View.GONE
-        activitySwitch.visibility = if (isCodeMode) View.VISIBLE else View.GONE
-        copyCodeButton.visibility = if (isCodeMode) View.VISIBLE else View.GONE
+        if (::languageSpinner.isInitialized) languageSpinner.visibility = if (isCodeMode) View.VISIBLE else View.GONE
+        if (::projectContextInput.isInitialized) projectContextInput.visibility = if (isCodeMode) View.VISIBLE else View.GONE
+        if (::activitySwitch.isInitialized) activitySwitch.visibility = if (isCodeMode) View.VISIBLE else View.GONE
+        if (::copyCodeButton.isInitialized) copyCodeButton.visibility = if (isCodeMode) View.VISIBLE else View.GONE
         if (::sendButton.isInitialized) {
-            sendButton.text = if (isCodeMode) "Исследовать и создать код" else "Отправить"
+            sendButton.text = "↑"
+            sendButton.contentDescription = if (isCodeMode) "Создать код" else "Отправить"
         }
-        if (::chatInput.isInitialized) {
-            chatInput.hint = if (isCodeMode) {
-                "Опиши задачу и что должен делать код..."
-            } else {
-                "Напиши сообщение..."
-            }
-        }
+        if (::chatInput.isInitialized) chatInput.hint =
+            if (isCodeMode) "Опишите задачу для кода…" else "Напишите сообщение…"
     }
 
     private fun validateSavedSession() {
@@ -601,7 +723,7 @@ class MainActivity : Activity() {
 
         val base = endpoint.text.toString().trim().trimEnd('/')
         if (!base.startsWith("https://")) {
-            chatLog.append("\nУкажи HTTPS-адрес API-сервера.\n")
+            appendChatMessage("assistant", "Укажи HTTPS-адрес API-сервера в настройках.")
             return
         }
         endpointValue = base
@@ -621,10 +743,8 @@ class MainActivity : Activity() {
         val requestCodeMode = isCodeMode
 
         chatInput.text.clear()
-        chatLog.append(
-            if (requestCodeMode) "\nТы • задача: $message\nSWIN AI: готовлю результат...\n"
-            else "\nТы: $message\nSWIN AI: думаю...\n"
-        )
+        appendChatMessage("user", message)
+        appendChatMessage("assistant", if (requestCodeMode) "Готовлю результат…" else "Думаю…")
         sendButton.isEnabled = false
 
         thread {
@@ -735,7 +855,7 @@ class MainActivity : Activity() {
                             lastGeneratedCode = code
                             copyCodeButton.isEnabled = true
                         }
-                        chatLog.append(output.toString() + "\n")
+                        appendChatMessage("assistant", output.toString(), code.isNotBlank())
                         sendButton.isEnabled = true
                     }
                 } else {
@@ -749,7 +869,7 @@ class MainActivity : Activity() {
                     val mode = response.optString("mode", "unknown")
                     val meta = if (elapsed >= 0) "\n[$mode • $elapsed мс]" else "\n[$mode]"
                     runOnUiThread {
-                        chatLog.append("SWIN AI: $answer$meta\n")
+                        appendChatMessage("assistant", "$answer$meta")
                         sendButton.isEnabled = true
                     }
                 }
@@ -758,7 +878,7 @@ class MainActivity : Activity() {
                     if (error is ApiException && error.statusCode == 401) {
                         clearLocalSession("Сессия истекла. Войди снова.")
                     } else {
-                        chatLog.append("Ошибка: ${error.message}\n")
+                        appendChatMessage("assistant", "Ошибка: ${error.message}")
                         sendButton.isEnabled = true
                     }
                 }
