@@ -7,6 +7,14 @@ on:
         description: "Количество эпох для учебной RNN"
         required: true
         default: "30"
+  push:
+    branches: ["main"]
+    paths:
+      - "server/model.py"
+      - "server/train.py"
+      - "server/data/train.txt"
+      - "server/requirements.txt"
+      - ".github/workflows/train-model.yml"
 
 permissions:
   contents: read
@@ -27,7 +35,7 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Train own model weights
         working-directory: server
-        run: python train.py --data data/train.txt --epochs ${{ inputs.epochs }} --output model.npz
+        run: python train.py --data data/train.txt --epochs ${{ inputs.epochs || '30' }} --output model.npz
       - uses: actions/upload-artifact@v4
         with:
           name: swin-ai-model
