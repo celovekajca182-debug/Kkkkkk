@@ -18,11 +18,11 @@ internal object OfflineKnowledge {
         ),
         Entry(
             listOf("godot", "кнопк", "signal", "сигнал", "pressed"),
-            "В Godot 4 сигнал кнопки можно подключить так: $Button.pressed.connect(_on_button_pressed). Обработчик объяви как func _on_button_pressed() -> void:. Проверь путь к узлу и не подключай один и тот же сигнал каждый кадр."
+            "В Godot 4 подключи сигнал pressed к обработчику _on_button_pressed. В коде проверь существование узла кнопки и не подключай один и тот же сигнал каждый кадр."
         ),
         Entry(
             listOf("gradle", "androidx", "gradle.properties", "daemon", "jvm"),
-            "Проверь android/gradle.properties: каждое свойство должно быть на отдельной реальной строке. Например, android.useAndroidX=true — отдельная строка. Буквальные символы \\n вместо переноса могут сломать запуск Gradle. Также версия Gradle должна соответствовать Android Gradle Plugin."
+            "Проверь android/gradle.properties: каждое свойство должно быть на отдельной реальной строке. Например, android.useAndroidX=true — отдельная строка. Буквальные символы обратная косая черта+n вместо переноса могут сломать запуск Gradle. Также версия Gradle должна соответствовать Android Gradle Plugin."
         ),
         Entry(
             listOf("python", "traceback", "отлад", "ошибк", "exception"),
@@ -34,11 +34,12 @@ internal object OfflineKnowledge {
         ),
         Entry(
             listOf("transformer", "attention", "трансформер", "токенизатор"),
-            "Transformer использует self-attention для моделирования связей между токенами. Для своей модели нужны токенизатор, позиционные представления, блоки attention и MLP, причинная маска, функция потерь и большой качественный корпус. Текущая SWIN RNN — только учебный первый этап."
-        , 1),
+            "Transformer использует self-attention для моделирования связей между токенами. Для своей модели нужны токенизатор, позиционные представления, блоки attention и MLP, причинная маска, функция потерь и большой качественный корпус. Текущая SWIN RNN — только учебный первый этап.",
+            1
+        ),
         Entry(
             listOf("apk", "github actions", "артефакт", "сборк"),
-            "APK собирается workflow Build SWIN AI APK. Открой GitHub → Actions → успешный запуск сборки → Artifacts и скачай swin-ai-debug-apk. Для установки на Android распакуй архив и открой APK; при необходимости разреши установку из этого источника."
+            "APK собирается workflow Build SWIN AI APK. Открой GitHub, перейди в Actions, выбери успешный запуск сборки, затем скачай swin-ai-debug-apk в блоке Artifacts. Для установки на Android распакуй архив и открой APK; при необходимости разреши установку из этого источника."
         ),
         Entry(
             listOf("чит", "читы", "моддинг", "трейнер", "оффлайн", "собственн", "godot"),
