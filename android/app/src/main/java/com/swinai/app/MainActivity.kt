@@ -35,6 +35,7 @@ class MainActivity : Activity() {
     private lateinit var chatLog: TextView
     private lateinit var chatMessages: LinearLayout
     private lateinit var chatScroll: ScrollView
+    private lateinit var codingPanel: LinearLayout
     private lateinit var chatInput: EditText
     private lateinit var sendButton: Button
     private lateinit var codeModeButton: Button
@@ -593,7 +594,7 @@ class MainActivity : Activity() {
             visibility = View.GONE
         }
 
-        val toolsPanel = LinearLayout(this).apply {
+        codingPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(chatDp(10), chatDp(7), chatDp(10), chatDp(7))
             background = chatBg(Color.rgb(255, 254, 251), 14, Color.rgb(231, 226, 217))
@@ -618,11 +619,11 @@ class MainActivity : Activity() {
             cb.setPrimaryClip(ClipData.newPlainText("SWIN AI code", lastGeneratedCode))
             Toast.makeText(this, "Код скопирован", Toast.LENGTH_SHORT).show()
         }.apply { isEnabled = false }
-        toolsPanel.addView(languageSpinner, LinearLayout.LayoutParams(-1, chatDp(44)))
-        toolsPanel.addView(projectContextInput, LinearLayout.LayoutParams(-1, -2))
-        toolsPanel.addView(activitySwitch, LinearLayout.LayoutParams(-1, chatDp(40)))
-        toolsPanel.addView(copyCodeButton, LinearLayout.LayoutParams(-1, chatDp(42)))
-        root.addView(toolsPanel, LinearLayout.LayoutParams(-1, -2).apply {
+        codingPanel.addView(languageSpinner, LinearLayout.LayoutParams(-1, chatDp(44)))
+        codingPanel.addView(projectContextInput, LinearLayout.LayoutParams(-1, -2))
+        codingPanel.addView(activitySwitch, LinearLayout.LayoutParams(-1, chatDp(40)))
+        codingPanel.addView(copyCodeButton, LinearLayout.LayoutParams(-1, chatDp(42)))
+        root.addView(codingPanel, LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = chatDp(5); bottomMargin = chatDp(4)
         })
 
@@ -687,6 +688,7 @@ class MainActivity : Activity() {
     }
 
     private fun updateCodingControls() {
+        if (::codingPanel.isInitialized) codingPanel.visibility = if (isCodeMode) View.VISIBLE else View.GONE
         if (::languageSpinner.isInitialized) languageSpinner.visibility = if (isCodeMode) View.VISIBLE else View.GONE
         if (::projectContextInput.isInitialized) projectContextInput.visibility = if (isCodeMode) View.VISIBLE else View.GONE
         if (::activitySwitch.isInitialized) activitySwitch.visibility = if (isCodeMode) View.VISIBLE else View.GONE
