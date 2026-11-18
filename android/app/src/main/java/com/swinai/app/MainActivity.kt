@@ -10,6 +10,7 @@ import android.widget.*
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
 import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
@@ -17,11 +18,16 @@ class MainActivity : Activity() {
     private lateinit var input: EditText
     private lateinit var endpoint: EditText
     private lateinit var send: Button
+    private lateinit var sessionId: String
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = Color.rgb(12, 14, 24)
         window.navigationBarColor = Color.rgb(12, 14, 24)
+
+        val preferences = getPreferences(MODE_PRIVATE)
+        sessionId = preferences.getString("session_id", null) ?: UUID.randomUUID().toString()
+        preferences.edit().putString("session_id", sessionId).apply()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -40,10 +46,10 @@ class MainActivity : Activity() {
             setSingleLine(true)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.GRAY)
-            setText(getPreferences(MODE_PRIVATE).getString("api_base", "") ?: "")
+            setText(preferences.getString("api_base", "") ?: "")
         }
         log = TextView(this).apply {
-            text = "SWIN AI — экспериментальный проект\nОфлайн-справочник включён: Godot, Python, Android и обучение нейросетей.\n"
+            text = "SWIN AI 0.3 — Transformer + память диалога\\nОфлайн-справочник включён.\\n"
             textSize = 16f
             setTextColor(Color.WHITE)
             setPadding(8, 16, 8, 16)
@@ -78,12 +84,12 @@ class MainActivity : Activity() {
 
         val url = getChatUrl()
         if (!url.startsWith("https://") || url.contains("....")) {
-            log.append("\nТы: " + message + "\n")
+            log.append("\\nТы: " + message + "\\n")
             val offlineAnswer = OfflineKnowledge.answer(message)
             if (offlineAnswer != null) {
-                log.append("SWIN AI (офлайн): " + offlineAnswer + "\n")
+                log.append("SWIN AI (офлайн): " + offlineAnswer + "\\n")
             } else {
-                log.append("SWIN AI: в офлайн-справочнике пока нет подходящего материала. Подключи HTTPS-сервер, чтобы использовать серверную модель.\n")
+                log.append("SWIN AI: в офлайн-справочнике пока нет подходящего материала. Подключи HTTPS-сервер для Transformer и памяти диалога.\\n")
             }
             input.text.clear()
             return
@@ -93,7 +99,7 @@ class MainActivity : Activity() {
             .putString("api_base", endpoint.text.toString().trim())
             .apply()
         input.text.clear()
-        log.append("\nТы: " + message + "\nSWIN AI: думаю...\n")
+        log.append("\\nТы: " + message + "\\nSWIN AI: думаю...\\n")
         send.isEnabled = false
 
         thread {
@@ -104,8 +110,11 @@ class MainActivity : Activity() {
                 connection.readTimeout = 60000
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                val payload = JSONObject()
+                    .put("message", message)
+                    .put("session_id", sessionId)
                 connection.outputStream.use {
-                    it.write(JSONObject().put("message", message).toString().toByteArray(Charsets.UTF_8))
+                    it.write(payload.toString().toByteArray(Charsets.UTF_8))
                 }
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
@@ -120,13 +129,13 @@ class MainActivity : Activity() {
             } catch (error: Exception) {
                 val offlineAnswer = OfflineKnowledge.answer(message)
                 if (offlineAnswer != null) {
-                    "Сервер недоступен — офлайн-ответ:\n" + offlineAnswer
+                    "Сервер недоступен — офлайн-ответ:\\n" + offlineAnswer
                 } else {
                     "Ошибка соединения: " + error.toString()
                 }
             }
             runOnUiThread {
-                log.append("SWIN AI: " + answer + "\n")
+                log.append("SWIN AI: " + answer + "\\n")
                 send.isEnabled = true
             }
         }
