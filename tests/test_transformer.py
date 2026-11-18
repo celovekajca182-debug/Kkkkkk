@@ -27,11 +27,41 @@ class SWINTransformerTests(unittest.TestCase):
         )
         self.model.eval()
 
-    def test_inference_buffers_cover_full_context(self):
-        self.assertEqual(tuple(self.model.position_ids.shape), (24,))
-        self.assertEqual(tuple(self.model.causal_mask.shape), (24, 24))
-        self.assertTrue(self.model.causal_mask[0, 1])
-        self.assertFalse(self.model.causal_mask[1, 0])
+    def test_kv_cache_incremental_logits_match_full_forward(self):
+        tokens = torch.randint(0, 256, (1, 14))
+        with torch.inference_mode():
+            full_logits, _ = self.model(tokens)
+            cached_logits, caches = self.model.forward_with_cache(tokens[:, :5])
+            for position in range(5, tokens.shape[1]):
+                token = tokens[:, position:position + 1]
+                cached_logits, caches = self.model.forward_incremental(
+                    token, position, caches
+                )
+                self.assertTrue(
+                    torch.allclose(
+                        cached_logits[:, 0, :],
+                        full_logits[:, position, :],
+                        atol=1e-5,
+                        rtol=1e-5,
+                    )
+                )
+
+    def test_old_torch_transformer_weights_load_without_translation(self):
+        reference_layer = torch.nn.TransformerEncoderLayer(
+            d_model=32,
+            nhead=4,
+            dim_feedforward=128,
+            dropout=0.0,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        reference_encoder = torch.nn.TransformerEncoder(
+            reference_layer,
+            num_layers=1,
+            enable_nested_tensor=False,
+        )
+        self.model.blocks.load_state_dict(reference_encoder.state_dict(), strict=True)
 
     def test_greedy_generation_is_deterministic(self):
         first = self.model.generate("Пользователь:", max_new_tokens=12, temperature=0)
