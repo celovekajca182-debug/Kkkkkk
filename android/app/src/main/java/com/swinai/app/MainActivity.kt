@@ -928,8 +928,8 @@ class MainActivity : Activity() {
         val connection = URL(base + path).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = method
-            connection.connectTimeout = 12000
-            connection.readTimeout = 90000
+            connection.connectTimeout = 30000
+            connection.readTimeout = 120000
             connection.setRequestProperty("Accept", "application/json")
             if (!token.isNullOrBlank()) {
                 connection.setRequestProperty("Authorization", "Bearer $token")
