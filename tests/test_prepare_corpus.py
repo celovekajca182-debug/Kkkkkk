@@ -40,9 +40,18 @@ class CorpusPreparationTests(unittest.TestCase):
         self.assertLess(russian_letter_ratio("Mostly English text"), 0.1)
 
     def test_rejects_oasst_pii_label(self):
-        labels = {"name": ["quality", "pii"], "value": [0.9, 0.25]}
+        # Actual Hugging Face OASST1 parquet schema.
+        labels = {
+            "quality": {"value": 0.9, "count": 3},
+            "pii": {"value": 0.25, "count": 3},
+        }
         self.assertTrue(labels_have_rejection(labels))
-        self.assertFalse(labels_have_rejection({"name": ["quality"], "value": [0.9]}))
+        clean_labels = {"quality": {"value": 0.9, "count": 3}}
+        self.assertFalse(labels_have_rejection(clean_labels))
+        # Accept the legacy parallel name/value export shape too.
+        self.assertTrue(
+            labels_have_rejection({"name": ["quality", "pii"], "value": [0.9, 0.25]})
+        )
 
     def test_pairs_reviewed_russian_prompt_and_answer(self):
         rows = [
@@ -54,7 +63,7 @@ class CorpusPreparationTests(unittest.TestCase):
                 "q2",
                 "assistant",
                 "Плохой ответ с персональными данными.",
-                labels={"name": ["pii"], "value": [0.5]},
+                labels={"pii": {"value": 0.5, "count": 2}},
             ),
             row("q3", None, "prompter", "How do I use Python?"),
             row("a3", "q3", "assistant", "Используй Python для скриптов."),
