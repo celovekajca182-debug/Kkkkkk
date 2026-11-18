@@ -372,23 +372,25 @@ class MainActivity : Activity() {
         )
         val selectedCodingLanguage = codingLanguageValues.getOrElse(languageSpinner.selectedItemPosition) { "auto" }
         val includeCodingActivity = showCodingActivity
+        val selectedProjectContext = projectContextInput.text.toString().take(4000)
+        val requestCodeMode = isCodeMode
 
         chatInput.text.clear()
         chatLog.append(
-            if (isCodeMode) "\nТы • задача: $message\nSWIN AI: изучаю документацию и готовлю код...\n"
+            if (requestCodeMode) "\nТы • задача: $message\nSWIN AI: изучаю документацию и готовлю код...\n"
             else "\nТы: $message\nSWIN AI: думаю...\n"
         )
         sendButton.isEnabled = false
 
         thread {
             try {
-                if (isCodeMode) {
+                if (requestCodeMode) {
                     val payload = JSONObject()
                         .put("task", message)
                         .put("language", selectedCodingLanguage)
                         .put("research_web", true)
                         .put("show_activity", includeCodingActivity)
-                        .put("project_context", projectContextInput.text.toString().take(4000))
+                        .put("project_context", selectedProjectContext)
                     val response = requestJson("/code/assist", payload, token)
                     val output = StringBuilder()
                     output.append("\nSWIN AI • РЕЖИМ РАЗРАБОТКИ\n")
