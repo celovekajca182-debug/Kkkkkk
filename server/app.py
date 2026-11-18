@@ -57,7 +57,7 @@ if rnn_path.is_file():
 
 # Conversation history is isolated by authenticated user and client session.
 conversation_memory: OrderedDict[str, list[tuple[str, str]]] = OrderedDict()
-MAX_SESSIONS = 512
+MAX_SESSIONS = 256
 MAX_TURNS_PER_SESSION = 6
 
 _auth_attempts: dict[str, deque[float]] = defaultdict(deque)
