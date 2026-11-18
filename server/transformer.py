@@ -19,6 +19,134 @@ class ByteTokenizer:
         return bytes(int(token_id) for token_id in token_ids).decode("utf-8", errors="replace")
 
 
+class SWINMultiheadAttention(nn.Module):
+    """Multi-head causal attention with incremental key/value caching.
+
+    Parameter names intentionally match torch.nn.MultiheadAttention so previously
+    trained SWIN checkpoints can be loaded without translating their state_dict.
+    """
+
+    def __init__(self, d_model: int, n_heads: int, dropout: float):
+        super().__init__()
+        if d_model % n_heads != 0:
+            raise ValueError("d_model должен делиться на n_heads.")
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+        self.dropout = float(dropout)
+
+        self.in_proj_weight = nn.Parameter(torch.empty(3 * d_model, d_model))
+        self.in_proj_bias = nn.Parameter(torch.empty(3 * d_model))
+        self.out_proj = nn.Linear(d_model, d_model)
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        nn.init.xavier_uniform_(self.in_proj_weight)
+        nn.init.zeros_(self.in_proj_bias)
+
+    def _project(self, x: torch.Tensor):
+        batch_size, sequence_length, _ = x.shape
+        q, k, v = F.linear(x, self.in_proj_weight, self.in_proj_bias).chunk(3, dim=-1)
+
+        def split_heads(value):
+            return value.view(
+                batch_size, sequence_length, self.n_heads, self.head_dim
+            ).transpose(1, 2)
+
+        return split_heads(q), split_heads(k), split_heads(v)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        q, k, v = self._project(x)
+        attention = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            dropout_p=self.dropout if self.training else 0.0,
+            is_causal=True,
+        )
+        merged = attention.transpose(1, 2).contiguous().view(
+            x.shape[0], x.shape[1], self.d_model
+        )
+        return self.out_proj(merged)
+
+    def forward_cached(self, x: torch.Tensor, cache=None):
+        """Process a new chunk and return output plus concatenated (key, value)."""
+        q, new_k, new_v = self._project(x)
+        if cache is None:
+            keys, values = new_k, new_v
+            causal = True
+        else:
+            old_k, old_v = cache
+            keys = torch.cat((old_k, new_k), dim=2)
+            values = torch.cat((old_v, new_v), dim=2)
+            causal = False
+
+        attention = F.scaled_dot_product_attention(
+            q,
+            keys,
+            values,
+            dropout_p=0.0,
+            is_causal=causal,
+        )
+        merged = attention.transpose(1, 2).contiguous().view(
+            x.shape[0], x.shape[1], self.d_model
+        )
+        return self.out_proj(merged), (keys, values)
+
+
+class SWINTransformerLayer(nn.Module):
+    """Pre-norm Transformer block with state_dict-compatible parameter names."""
+
+    def __init__(self, d_model: int, n_heads: int, dropout: float):
+        super().__init__()
+        self.self_attn = SWINMultiheadAttention(d_model, n_heads, dropout)
+        self.linear1 = nn.Linear(d_model, d_model * 4)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(d_model * 4, d_model)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x + self.dropout1(self.self_attn(self.norm1(x)))
+        feed_forward = self.linear2(
+            self.dropout(F.gelu(self.linear1(self.norm2(x))))
+        )
+        return x + self.dropout2(feed_forward)
+
+    def forward_cached(self, x: torch.Tensor, cache=None):
+        attention, new_cache = self.self_attn.forward_cached(self.norm1(x), cache)
+        x = x + attention
+        feed_forward = self.linear2(F.gelu(self.linear1(self.norm2(x))))
+        return x + feed_forward, new_cache
+
+
+class SWINTransformerEncoder(nn.Module):
+    def __init__(self, d_model: int, n_heads: int, n_layers: int, dropout: float):
+        super().__init__()
+        self.layers = nn.ModuleList(
+            [
+                SWINTransformerLayer(d_model, n_heads, dropout)
+                for _ in range(n_layers)
+            ]
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+    def forward_cached(self, x: torch.Tensor, caches=None):
+        if caches is None:
+            caches = [None] * len(self.layers)
+        new_caches = []
+        for layer, cache in zip(self.layers, caches):
+            x, new_cache = layer.forward_cached(x, cache)
+            new_caches.append(new_cache)
+        return x, new_caches
+
+
 class SWINTransformer(nn.Module):
     """Small decoder-only Transformer trained from scratch on next-byte prediction."""
 
@@ -43,35 +171,18 @@ class SWINTransformer(nn.Module):
 
         self.token_embedding = nn.Embedding(BYTE_VOCAB_SIZE, self.d_model)
         self.position_embedding = nn.Embedding(self.block_size, self.d_model)
-        # Reuse fixed buffers instead of rebuilding position IDs and the causal mask
-        # for every generated byte.
         self.register_buffer(
             "position_ids", torch.arange(self.block_size, dtype=torch.long), persistent=False
         )
-        self.register_buffer(
-            "causal_mask",
-            torch.triu(
-                torch.ones(self.block_size, self.block_size, dtype=torch.bool), diagonal=1
-            ),
-            persistent=False,
-        )
-        layer = nn.TransformerEncoderLayer(
-            d_model=self.d_model,
-            nhead=self.n_heads,
-            dim_feedforward=self.d_model * 4,
-            dropout=dropout,
-            activation="gelu",
-            batch_first=True,
-            norm_first=True,
-        )
-        self.blocks = nn.TransformerEncoder(
-            layer,
-            num_layers=self.n_layers,
-            enable_nested_tensor=False,
+        self.blocks = SWINTransformerEncoder(
+            self.d_model, self.n_heads, self.n_layers, dropout
         )
         self.final_norm = nn.LayerNorm(self.d_model)
         self.lm_head = nn.Linear(self.d_model, BYTE_VOCAB_SIZE, bias=False)
         self.lm_head.weight = self.token_embedding.weight
+
+    def _logits(self, x: torch.Tensor) -> torch.Tensor:
+        return self.lm_head(self.final_norm(x))
 
     def forward(self, token_ids: torch.Tensor, targets: torch.Tensor | None = None):
         batch_size, sequence_length = token_ids.shape
@@ -80,9 +191,8 @@ class SWINTransformer(nn.Module):
 
         positions = self.position_ids[:sequence_length]
         x = self.token_embedding(token_ids) + self.position_embedding(positions)[None, :, :]
-        causal_mask = self.causal_mask[:sequence_length, :sequence_length]
-        x = self.blocks(x, mask=causal_mask)
-        logits = self.lm_head(self.final_norm(x))
+        x = self.blocks(x)
+        logits = self._logits(x)
 
         loss = None
         if targets is not None:
@@ -93,12 +203,35 @@ class SWINTransformer(nn.Module):
         return logits, loss
 
     @torch.inference_mode()
+    def forward_with_cache(self, token_ids: torch.Tensor):
+        """Prefill prompt once and return the per-layer attention KV cache."""
+        batch_size, sequence_length = token_ids.shape
+        if sequence_length < 1 or sequence_length > self.block_size:
+            raise ValueError("Размер prefill-последовательности вне допустимого диапазона.")
+        positions = self.position_ids[:sequence_length]
+        x = self.token_embedding(token_ids) + self.position_embedding(positions)[None, :, :]
+        x, caches = self.blocks.forward_cached(x)
+        return self._logits(x), caches
+
+    @torch.inference_mode()
+    def forward_incremental(self, token_id: torch.Tensor, position: int, caches):
+        """Process one new byte using cached keys and values."""
+        if position < 0 or position >= self.block_size:
+            raise ValueError("Позиция за пределами block_size.")
+        if token_id.shape[1] != 1:
+            raise ValueError("KV-cache принимает ровно один новый токен.")
+        positions = self.position_ids[position:position + 1]
+        x = self.token_embedding(token_id) + self.position_embedding(positions)[None, :, :]
+        x, new_caches = self.blocks.forward_cached(x, caches)
+        return self._logits(x), new_caches
+
+    @torch.inference_mode()
     def generate(
         self,
         prompt: str,
         max_new_tokens: int = 160,
-        temperature: float = 0.75,
-        top_k: int = 40,
+        temperature: float = 0.0,
+        top_k: int = 1,
         stop_at_newline: bool = True,
     ) -> str:
         self.eval()
@@ -106,18 +239,17 @@ class SWINTransformer(nn.Module):
         token_ids = tokenizer.encode(prompt)
         if not token_ids:
             token_ids = [ord(" ")]
+
+        context = token_ids[-self.block_size:]
+        context_tensor = torch.tensor(
+            [context], dtype=torch.long, device=next(self.parameters()).device
+        )
+        logits, caches = self.forward_with_cache(context_tensor)
         generated: list[int] = []
 
         for _ in range(max(0, max_new_tokens)):
-            context = torch.tensor(
-                [token_ids[-self.block_size:]],
-                dtype=torch.long,
-                device=next(self.parameters()).device,
-            )
-            logits, _ = self(context)
             next_logits = logits[0, -1, :]
             if temperature <= 0:
-                # Fast deterministic decoding avoids softmax/top-k/multinomial overhead.
                 next_id = int(torch.argmax(next_logits).item())
             else:
                 next_logits = next_logits / max(float(temperature), 0.05)
@@ -126,11 +258,27 @@ class SWINTransformer(nn.Module):
                     next_logits[next_logits < threshold] = float("-inf")
                 probabilities = F.softmax(next_logits, dim=-1)
                 next_id = int(torch.multinomial(probabilities, num_samples=1).item())
+
             generated.append(next_id)
             token_ids.append(next_id)
-
             if stop_at_newline and next_id == 10:
                 break
+
+            if len(context) < self.block_size:
+                new_token = torch.tensor(
+                    [[next_id]], dtype=torch.long, device=context_tensor.device
+                )
+                logits, caches = self.forward_incremental(
+                    new_token, position=len(context), caches=caches
+                )
+                context.append(next_id)
+            else:
+                # Rebase positional embeddings when the rolling context window is full.
+                context = token_ids[-self.block_size:]
+                context_tensor = torch.tensor(
+                    [context], dtype=torch.long, device=context_tensor.device
+                )
+                logits, caches = self.forward_with_cache(context_tensor)
 
         return tokenizer.decode(generated)
 
