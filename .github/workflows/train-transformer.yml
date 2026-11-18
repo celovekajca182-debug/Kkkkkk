@@ -30,7 +30,7 @@ on:
       - ".github/workflows/train-transformer.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   train:
@@ -79,3 +79,14 @@ jobs:
             server/data/dataset_manifest.json
             server/data/mbpp_manifest.json
           if-no-files-found: error
+
+      - name: Publish SWIN model checkpoint
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: swin-model-latest
+          name: SWIN AI model checkpoint
+          target_commitish: ${{ github.sha }}
+          files: |
+            server/models/swin-transformer.pt
+          overwrite_files: true
+          make_latest: false
