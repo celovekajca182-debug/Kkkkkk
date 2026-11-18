@@ -235,7 +235,7 @@ def _make_prompt(task: str, language: str, sources: list[dict[str, str]],
         marker = " ... "
         marker_bytes = len(marker.encode("utf-8"))
         usable = max(16, task_budget - marker_bytes)
-        head_budget = max(8, int(usable * 0.30))
+        head_budget = max(8, int(usable * 0.15))
         tail_budget = max(8, usable - head_budget)
         head = task_bytes[:head_budget].decode("utf-8", errors="ignore")
         tail = task_bytes[-tail_budget:].decode("utf-8", errors="ignore")
