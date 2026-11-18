@@ -7,7 +7,7 @@ from knowledge import KnowledgeBase
 class KnowledgeBaseTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        data_path = Path(__file__).resolve().parents[1] / "data" / "knowledge.json"
+        data_path = Path(__file__).resolve().parents[1] / "server" / "data" / "knowledge.json"
         cls.base = KnowledgeBase(data_path)
 
     def test_godot_movement_lookup(self):
