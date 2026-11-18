@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from coding_agent import (
+    LANGUAGES,
     _make_prompt,
     detect_language,
     run_code_assist,
@@ -25,10 +26,19 @@ class FakeModel:
 
 
 class CodingAgentTests(unittest.TestCase):
-    def test_language_detection(self):
+    def test_language_detection_and_wide_catalog(self):
         self.assertEqual(detect_language("Сделай скрипт на Godot", "auto"), "gdscript")
         self.assertEqual(detect_language("Create a FastAPI endpoint", "auto"), "python")
+        self.assertEqual(detect_language("write a Rust function", "auto"), "rust")
         self.assertEqual(detect_language("whatever", "kotlin"), "kotlin")
+        self.assertEqual(detect_language("whatever", "C++"), "cpp")
+        for language in ("python", "gdscript", "java", "javascript", "typescript",
+                         "c", "cpp", "csharp", "go", "rust", "php", "ruby",
+                         "swift", "dart", "sql", "bash", "powershell", "lua",
+                         "r", "scala", "perl", "elixir", "haskell", "html",
+                         "css", "xml", "json", "yaml", "toml", "dockerfile",
+                         "glsl", "solidity", "other"):
+            self.assertIn(language, LANGUAGES)
 
     def test_python_validation_uses_ast_without_executing(self):
         good = validate_code("def f(x):\n    return x + 1\n", "python")
@@ -36,6 +46,13 @@ class CodingAgentTests(unittest.TestCase):
         self.assertEqual(good["status"], "passed")
         self.assertEqual(good["method"], "python_ast")
         self.assertEqual(bad["status"], "failed")
+
+    def test_strict_data_format_validation(self):
+        self.assertEqual(validate_code('{"ok": true}', "json")["status"], "passed")
+        self.assertEqual(validate_code('{"ok":', "json")["status"], "failed")
+        self.assertEqual(validate_code("<root><item/></root>", "xml")["status"], "passed")
+        self.assertEqual(validate_code("<root>", "xml")["status"], "failed")
+        self.assertEqual(validate_code('name = "swin"\n', "toml")["status"], "passed")
 
     def test_prompt_preserves_task_and_fits_model_context(self):
         task = "Сделай большую программу. " * 50 + "ВАЖНО: верни полный код класса Player."
@@ -51,22 +68,27 @@ class CodingAgentTests(unittest.TestCase):
         self.assertIn("ВАЖНО:", prompt)
         self.assertIn("КОД:", prompt)
 
-    def test_search_filters_non_https_links(self):
+    def test_search_covers_general_internet_and_rejects_insecure_links(self):
         fake_module = types.SimpleNamespace(
             DDGS=lambda **kwargs: types.SimpleNamespace(
                 text=lambda *args, **kw: [
+                    {"title": "Community", "href": "https://stackoverflow.com/questions/1", "body": "Community example"},
                     {"title": "Docs", "href": "https://docs.python.org/3/", "body": "Python docs"},
                     {"title": "Unsafe", "href": "http://example.com", "body": "No TLS"},
+                    {"title": "Local", "href": "https://127.0.0.1/private", "body": "Local"},
                     {"title": "Bad", "href": "javascript:alert(1)", "body": "Bad"},
                 ]
             )
         )
         with patch.dict(sys.modules, {"ddgs": fake_module}):
             results = search_documentation("parse json", "python")
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["title"], "Docs")
+        urls = [item["url"] for item in results]
+        self.assertIn("https://stackoverflow.com/questions/1", urls)
+        self.assertIn("https://docs.python.org/3/", urls)
+        self.assertTrue(all(url.startswith("https://") for url in urls))
+        self.assertEqual(results[0]["trust"], "primary")
 
-    def test_activity_is_hidden_by_default(self):
+    def test_activity_is_hidden_by_default_and_verification_is_returned(self):
         model = FakeModel()
         result = run_code_assist(
             "Напиши функцию сложения двух чисел",
@@ -79,6 +101,8 @@ class CodingAgentTests(unittest.TestCase):
         self.assertIn("def add", result["code"])
         self.assertNotIn("activity", result)
         self.assertIn("ЗАДАЧА", model.last_prompt)
+        self.assertEqual(result["verification"]["syntax"]["status"], "passed")
+        self.assertEqual(result["verification"]["runtime_tests"]["status"], "not_run")
 
     def test_activity_can_be_shown_without_private_reasoning(self):
         model = FakeModel()
@@ -103,6 +127,7 @@ class CodingAgentTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "model_not_loaded")
         self.assertEqual(result["code"], "")
+        self.assertIn("verification", result)
 
 
 if __name__ == "__main__":
