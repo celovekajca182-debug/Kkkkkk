@@ -6,7 +6,12 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.ColorDrawable
 import android.text.InputType
+import android.text.method.PasswordTransformationMethod
+import android.text.method.HideReturnsTransformationMethod
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -50,7 +55,7 @@ class MainActivity : Activity() {
         window.navigationBarColor = Color.rgb(12, 14, 24)
 
         val preferences = getPreferences(MODE_PRIVATE)
-        endpointValue = preferences.getString("api_base", "") ?: ""
+        endpointValue = preferences.getString("api_base", "https://kkkkkk-02vl.onrender.com") ?: "https://kkkkkk-02vl.onrender.com"
         authToken = SecureTokenStore.read(this)
         userEmail = preferences.getString("account_email", "") ?: ""
         if (authToken != null && userEmail.isNotBlank()) {
@@ -104,69 +109,292 @@ class MainActivity : Activity() {
         root.addView(View(this), LinearLayout.LayoutParams(1, height))
     }
 
+    private fun authDp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    private fun authFieldBackground(): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = authDp(12).toFloat()
+        setColor(Color.rgb(27, 33, 39))
+        setStroke(authDp(1), Color.rgb(55, 64, 72))
+    }
+
+    private fun authLabel(value: String): TextView = makeText(
+        value,
+        13f,
+        Color.rgb(190, 199, 204)
+    ).apply {
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    }
+
+    private fun authInput(hintText: String, type: Int): EditText =
+        makeEdit(hintText, type).apply {
+            background = authFieldBackground()
+            setPadding(authDp(16), authDp(8), authDp(16), authDp(8))
+            minHeight = authDp(56)
+            textSize = 16f
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NEXT
+        }
+
+    private fun styleAuthButton(button: Button, primary: Boolean) {
+        button.isAllCaps = false
+        button.textSize = 15f
+        button.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        button.setPadding(authDp(16), 0, authDp(16), 0)
+        button.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = authDp(13).toFloat()
+            setColor(
+                if (primary) Color.rgb(195, 231, 111)
+                else Color.TRANSPARENT
+            )
+            if (!primary) setStroke(authDp(1), Color.rgb(58, 68, 75))
+        }
+        button.setTextColor(
+            if (primary) Color.rgb(24, 30, 23)
+            else Color.rgb(206, 215, 218)
+        )
+        button.stateListAnimator = null
+        button.elevation = if (primary) authDp(2).toFloat() else 0f
+    }
+
     private fun showAuthScreen(message: String? = null) {
-        val root = darkRoot()
-        val scroll = ScrollView(this)
+        window.statusBarColor = Color.rgb(16, 21, 24)
+        window.navigationBarColor = Color.rgb(16, 21, 24)
+
+        val backgroundColor = Color.rgb(16, 21, 24)
+        val accentColor = Color.rgb(195, 231, 111)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(backgroundColor)
+        }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+        }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(4, 18, 4, 18)
+            setPadding(authDp(24), authDp(28), authDp(24), authDp(26))
         }
 
-        val title = makeText("SWIN AI", 30f, Color.rgb(170, 145, 255)).apply {
+        val brandRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val brandMark = TextView(this).apply {
+            text = "S"
+            textSize = 24f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
             gravity = Gravity.CENTER
+            setTextColor(Color.rgb(23, 29, 22))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = authDp(12).toFloat()
+                setColor(accentColor)
+            }
         }
-        val subtitle = makeText(
-            if (isRegisterMode) "Создай аккаунт по электронной почте" else "Войди в свой аккаунт",
-            15f,
-            Color.LTGRAY
-        ).apply { gravity = Gravity.CENTER }
+        brandRow.addView(brandMark, LinearLayout.LayoutParams(authDp(46), authDp(46)))
+        val brandName = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(authDp(12), 0, 0, 0)
+        }
+        brandName.addView(makeText("SWIN AI", 18f, Color.WHITE).apply {
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        })
+        brandName.addView(makeText("ЛИЧНЫЙ КАБИНЕТ", 10f, Color.rgb(130, 143, 149)).apply {
+            letterSpacing = 0.12f
+        })
+        brandRow.addView(brandName, LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+        ))
+        content.addView(brandRow)
+        addGap(content, 42)
 
-        endpoint = makeEdit(
-            "HTTPS-адрес сервера SWIN AI",
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        ).apply { setText(endpointValue) }
-        emailInput = makeEdit(
-            "Электронная почта",
+        content.addView(makeText(
+            if (isRegisterMode) "НОВЫЙ АККАУНТ" else "С ВОЗВРАЩЕНИЕМ",
+            11f,
+            accentColor
+        ).apply {
+            letterSpacing = 0.14f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        })
+        addGap(content, 9)
+
+        content.addView(makeText(
+            if (isRegisterMode) "Создайте аккаунт" else "Войдите в SWIN AI",
+            29f,
+            Color.rgb(244, 247, 245)
+        ).apply {
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        })
+        addGap(content, 8)
+        content.addView(makeText(
+            if (isRegisterMode)
+                "Один аккаунт для работы с вашим помощником."
+            else
+                "Введите данные, чтобы продолжить работу.",
+            14f,
+            Color.rgb(151, 163, 168)
+        ))
+        addGap(content, 30)
+
+        content.addView(authLabel("Электронная почта"))
+        addGap(content, 8)
+        emailInput = authInput(
+            "name@example.com",
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-        )
+        ).apply {
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NEXT
+            setText(userEmail.takeIf { it.isNotBlank() } ?: "")
+        }
+        content.addView(emailInput, LinearLayout.LayoutParams(-1, authDp(56)))
+        addGap(content, 18)
+
+        content.addView(authLabel("Пароль"))
+        addGap(content, 8)
         passwordInput = makeEdit(
-            "Пароль (минимум 12 символов)",
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        )
-        confirmInput = makeEdit(
-            "Повтори пароль",
+            "Введите пароль",
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         ).apply {
-            visibility = if (isRegisterMode) View.VISIBLE else View.GONE
+            background = ColorDrawable(Color.TRANSPARENT)
+            setPadding(authDp(16), authDp(8), authDp(8), authDp(8))
+            minHeight = authDp(54)
+            textSize = 16f
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NEXT
+        }
+        val passwordRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = authFieldBackground()
+        }
+        val revealPassword = TextView(this).apply {
+            text = "Показать"
+            textSize = 13f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(accentColor)
+            gravity = Gravity.CENTER
+            setPadding(authDp(8), 0, authDp(14), 0)
+        }
+        passwordRow.addView(passwordInput, LinearLayout.LayoutParams(
+            0, authDp(56), 1f
+        ))
+        passwordRow.addView(revealPassword, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, authDp(56)
+        ))
+        var passwordVisible = false
+        revealPassword.setOnClickListener {
+            val cursor = passwordInput.selectionStart.coerceAtLeast(0)
+            passwordVisible = !passwordVisible
+            passwordInput.transformationMethod = if (passwordVisible) {
+                HideReturnsTransformationMethod.getInstance()
+            } else {
+                PasswordTransformationMethod.getInstance()
+            }
+            revealPassword.text = if (passwordVisible) "Скрыть" else "Показать"
+            passwordInput.setSelection(cursor.coerceAtMost(passwordInput.text.length))
+        }
+        content.addView(passwordRow, LinearLayout.LayoutParams(-1, authDp(56)))
+
+        confirmInput = authInput(
+            "Повторите пароль",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        )
+        confirmInput.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+        if (isRegisterMode) {
+            addGap(content, 18)
+            content.addView(authLabel("Повторите пароль"))
+            addGap(content, 8)
+            content.addView(confirmInput, LinearLayout.LayoutParams(-1, authDp(56)))
+            addGap(content, 7)
+            content.addView(makeText(
+                "Используйте не менее 12 символов.",
+                12f,
+                Color.rgb(130, 143, 149)
+            ))
         }
 
-        authStatus = makeText(message ?: "Пароль хранится на сервере только в виде хеша.", 13f, Color.LTGRAY)
+        addGap(content, 22)
+        authStatus = makeText(
+            message ?: if (isRegisterMode)
+                "Пароль должен содержать минимум 12 символов."
+            else
+                "Ваши данные передаются по защищённому соединению.",
+            12f,
+            if (message.isNullOrBlank()) Color.rgb(130, 143, 149)
+            else Color.rgb(235, 177, 135)
+        )
+        content.addView(authStatus)
+        addGap(content, 12)
+
         authButton = makeButton(
-            if (isRegisterMode) "Зарегистрироваться" else "Войти"
+            if (isRegisterMode) "Создать аккаунт" else "Войти"
         ) { submitAuthentication() }
+        styleAuthButton(authButton, true)
+        content.addView(authButton, LinearLayout.LayoutParams(-1, authDp(56)))
+        addGap(content, 8)
+
         val switchButton = makeButton(
-            if (isRegisterMode) "У меня уже есть аккаунт — войти" else "Создать новый аккаунт"
+            if (isRegisterMode) "Уже есть аккаунт? Войти"
+            else "Нет аккаунта? Зарегистрироваться"
         ) {
             isRegisterMode = !isRegisterMode
             showAuthScreen()
         }
+        styleAuthButton(switchButton, false)
+        content.addView(switchButton, LinearLayout.LayoutParams(-1, authDp(50)))
 
-        content.addView(title, LinearLayout.LayoutParams(-1, 58))
-        content.addView(subtitle, LinearLayout.LayoutParams(-1, 36))
-        addGap(content, 12)
-        content.addView(endpoint, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
-        addGap(content, 8)
-        content.addView(emailInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
-        addGap(content, 8)
-        content.addView(passwordInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
-        addGap(content, 8)
-        content.addView(confirmInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
-        addGap(content, 14)
-        content.addView(authStatus, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
-        addGap(content, 8)
-        content.addView(authButton, LinearLayout.LayoutParams(-1, 54))
-        content.addView(switchButton, LinearLayout.LayoutParams(-1, 50))
+        addGap(content, 28)
+        val serverDivider = View(this).apply {
+            setBackgroundColor(Color.rgb(43, 52, 58))
+        }
+        content.addView(serverDivider, LinearLayout.LayoutParams(-1, authDp(1)))
+        addGap(content, 15)
+
+        val serverHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        serverHeader.addView(makeText(
+            "Настройки подключения",
+            13f,
+            Color.rgb(174, 185, 190)
+        ), LinearLayout.LayoutParams(0, authDp(38), 1f))
+        val serverToggle = TextView(this).apply {
+            text = "Изменить"
+            textSize = 13f
+            setTextColor(accentColor)
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        serverHeader.addView(serverToggle)
+        content.addView(serverHeader)
+
+        endpoint = makeEdit(
+            "HTTPS-адрес сервера",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        ).apply {
+            setText(endpointValue)
+            background = authFieldBackground()
+            setPadding(authDp(14), authDp(8), authDp(14), authDp(8))
+            minHeight = authDp(52)
+            textSize = 13f
+            visibility = View.GONE
+        }
+        content.addView(endpoint, LinearLayout.LayoutParams(-1, authDp(52)))
+        serverToggle.setOnClickListener {
+            val expanded = endpoint.visibility != View.VISIBLE
+            endpoint.visibility = if (expanded) View.VISIBLE else View.GONE
+            serverToggle.text = if (expanded) "Скрыть" else "Изменить"
+        }
+
+        addGap(content, 18)
+        content.addView(makeText(
+            "SWIN AI  •  Защищённое подключение",
+            11f,
+            Color.rgb(100, 113, 119)
+        ).apply { gravity = Gravity.CENTER })
+
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
