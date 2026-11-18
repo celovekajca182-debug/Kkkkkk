@@ -53,9 +53,9 @@ def russian_letter_ratio(text: str) -> float:
 def labels_have_rejection(labels) -> bool:
     """Reject OASST rows explicitly flagged by annotators.
 
-    Current OASST1 parquet schema stores labels as
-    {"spam": {"value": 0.0, "count": 3}, ...}. The alternate
-    name/value sequence shape is also accepted for older exports.
+    Hugging Face currently exposes OASST1 labels as parallel arrays:
+    {"name": ["spam", "pii"], "value": [0.0, 0.25], "count": [3, 3]}.
+    Also accept transformed exports mapping names to value objects.
     """
     if not isinstance(labels, dict):
         return False
