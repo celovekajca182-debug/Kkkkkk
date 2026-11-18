@@ -35,7 +35,7 @@ class MainActivity : Activity() {
             setTextColor(Color.rgb(170, 145, 255))
         }
         endpoint = EditText(this).apply {
-            hint = "HTTPS-адрес своего сервера"
+            hint = "HTTPS-адрес своего сервера (необязательно)"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             setSingleLine(true)
             setTextColor(Color.WHITE)
@@ -43,7 +43,7 @@ class MainActivity : Activity() {
             setText(getPreferences(MODE_PRIVATE).getString("api_base", "") ?: "")
         }
         log = TextView(this).apply {
-            text = "SWIN AI — собственный экспериментальный проект\nЛокальная база знаний работает без внешних AI API.\n"
+            text = "SWIN AI — экспериментальный проект\nОфлайн-справочник включён: Godot, Python, Android и обучение нейросетей.\n"
             textSize = 16f
             setTextColor(Color.WHITE)
             setPadding(8, 16, 8, 16)
@@ -78,7 +78,14 @@ class MainActivity : Activity() {
 
         val url = getChatUrl()
         if (!url.startsWith("https://") || url.contains("....")) {
-            log.append("\nSWIN AI: сначала укажи HTTPS-адрес своего сервера в поле сверху.\n")
+            log.append("\nТы: " + message + "\n")
+            val offlineAnswer = OfflineKnowledge.answer(message)
+            if (offlineAnswer != null) {
+                log.append("SWIN AI (офлайн): " + offlineAnswer + "\n")
+            } else {
+                log.append("SWIN AI: в офлайн-справочнике пока нет подходящего материала. Подключи HTTPS-сервер, чтобы использовать серверную модель.\n")
+            }
+            input.text.clear()
             return
         }
 
@@ -111,7 +118,12 @@ class MainActivity : Activity() {
                     json.optString("detail", "Ошибка сервера HTTP " + code)
                 }
             } catch (error: Exception) {
-                "Ошибка соединения: " + error.toString()
+                val offlineAnswer = OfflineKnowledge.answer(message)
+                if (offlineAnswer != null) {
+                    "Сервер недоступен — офлайн-ответ:\n" + offlineAnswer
+                } else {
+                    "Ошибка соединения: " + error.toString()
+                }
             }
             runOnUiThread {
                 log.append("SWIN AI: " + answer + "\n")
