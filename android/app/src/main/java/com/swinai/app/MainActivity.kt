@@ -26,8 +26,13 @@ class MainActivity : Activity() {
     private lateinit var chatLog: TextView
     private lateinit var chatInput: EditText
     private lateinit var sendButton: Button
+    private lateinit var codeModeButton: Button
+    private lateinit var languageSpinner: Spinner
+    private lateinit var activitySwitch: Switch
 
     private var isRegisterMode = false
+    private var isCodeMode = false
+    private var showCodingActivity = false
     private var authToken: String? = null
     private var userEmail = ""
     private var sessionId = ""
@@ -239,6 +244,44 @@ class MainActivity : Activity() {
             48
         ))
 
+        val codingControls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        codeModeButton = makeButton("Режим: Чат") {
+            isCodeMode = !isCodeMode
+            updateCodingControls()
+        }
+        languageSpinner = Spinner(this).apply {
+            val languages = listOf(
+                "Автоопределение",
+                "Python",
+                "Godot 4 / GDScript",
+                "Kotlin / Android",
+                "JavaScript",
+                "TypeScript",
+                "HTML",
+                "CSS",
+                "JSON"
+            )
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                languages
+            )
+        }
+        activitySwitch = Switch(this).apply {
+            text = "Показывать этапы поиска и проверки"
+            setTextColor(Color.LTGRAY)
+            isChecked = false
+            setOnCheckedChangeListener { _, checked ->
+                showCodingActivity = checked
+            }
+        }
+        codingControls.addView(codeModeButton, LinearLayout.LayoutParams(-1, 48))
+        codingControls.addView(languageSpinner, LinearLayout.LayoutParams(-1, 48))
+        codingControls.addView(activitySwitch, LinearLayout.LayoutParams(-1, 44))
+        root.addView(codingControls, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+
         endpoint = makeEdit(
             "HTTPS-адрес сервера",
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
@@ -265,7 +308,24 @@ class MainActivity : Activity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(chatInput, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
         root.addView(sendButton, LinearLayout.LayoutParams(-1, 52))
+        updateCodingControls()
         setContentView(root)
+    }
+
+    private fun updateCodingControls() {
+        codeModeButton.text = if (isCodeMode) "Режим: Разработка кода" else "Режим: Чат"
+        languageSpinner.visibility = if (isCodeMode) View.VISIBLE else View.GONE
+        activitySwitch.visibility = if (isCodeMode) View.VISIBLE else View.GONE
+        if (::sendButton.isInitialized) {
+            sendButton.text = if (isCodeMode) "Исследовать и создать код" else "Отправить"
+        }
+        if (::chatInput.isInitialized) {
+            chatInput.hint = if (isCodeMode) {
+                "Опиши задачу и что должен делать код..."
+            } else {
+                "Напиши сообщение..."
+            }
+        }
     }
 
     private fun validateSavedSession() {
@@ -299,30 +359,112 @@ class MainActivity : Activity() {
         getPreferences(MODE_PRIVATE).edit().putString("api_base", base).apply()
 
         chatInput.text.clear()
-        chatLog.append("\nТы: $message\nSWIN AI: думаю...\n")
+        chatLog.append(
+            if (isCodeMode) "\nТы • задача: $message\nSWIN AI: изучаю документацию и готовлю код...\n"
+            else "\nТы: $message\nSWIN AI: думаю...\n"
+        )
         sendButton.isEnabled = false
 
         thread {
             try {
-                val response = requestJson(
-                    "/chat",
-                    JSONObject().put("message", message).put("session_id", sessionId),
-                    token
-                )
-                val answer = response.optString("answer", "Сервер вернул пустой ответ.")
-                val elapsed = response.optDouble("generation_ms", -1.0)
-                val mode = response.optString("mode", "unknown")
-                val meta = if (elapsed >= 0) "\n[$mode • $elapsed мс]" else "\n[$mode]"
-                runOnUiThread {
-                    chatLog.append("SWIN AI: $answer$meta\n")
-                    sendButton.isEnabled = true
+                if (isCodeMode) {
+                    val languageValues = listOf(
+                        "auto", "python", "gdscript", "kotlin",
+                        "javascript", "typescript", "html", "css", "json"
+                    )
+                    val language = languageValues.getOrElse(languageSpinner.selectedItemPosition) { "auto" }
+                    val payload = JSONObject()
+                        .put("task", message)
+                        .put("language", language)
+                        .put("research_web", true)
+                        .put("show_activity", showCodingActivity)
+                    val response = requestJson("/code/assist", payload, token)
+                    val output = StringBuilder()
+                    output.append("\nSWIN AI • РЕЖИМ РАЗРАБОТКИ\n")
+                    output.append(response.optString("summary", "Результат готов."))
+                    output.append("\nСтатус: ")
+                    output.append(response.optString("status", "unknown"))
+                    val validation = response.optJSONObject("validation")
+                    if (validation != null) {
+                        output.append("\nПроверка: ")
+                        output.append(validation.optString("message", "не выполнена"))
+                    }
+                    val code = response.optString("code", "")
+                    if (code.isNotBlank()) {
+                        output.append("\n\nКОД:\n")
+                        output.append(code)
+                        output.append("\n")
+                    } else {
+                        output.append("\nКод не создан: проверь, загружены ли веса модели на сервер.\n")
+                    }
+
+                    if (showCodingActivity) {
+                        val plan = response.optJSONArray("plan")
+                        if (plan != null && plan.length() > 0) {
+                            output.append("\nПлан работы:\n")
+                            for (i in 0 until plan.length()) {
+                                output.append("• ")
+                                output.append(plan.optString(i))
+                                output.append("\n")
+                            }
+                        }
+                        val activity = response.optJSONArray("activity")
+                        if (activity != null && activity.length() > 0) {
+                            output.append("\nЭтапы:\n")
+                            for (i in 0 until activity.length()) {
+                                val item = activity.optJSONObject(i) ?: continue
+                                output.append("• ")
+                                output.append(item.optString("label"))
+                                output.append(" [")
+                                output.append(item.optString("status"))
+                                output.append("]\n")
+                            }
+                        }
+                        val refs = response.optJSONArray("references")
+                        if (refs != null && refs.length() > 0) {
+                            output.append("\nИсточники:\n")
+                            for (i in 0 until refs.length()) {
+                                val item = refs.optJSONObject(i) ?: continue
+                                output.append("• ")
+                                output.append(item.optString("title"))
+                                output.append(" — ")
+                                output.append(item.optString("url"))
+                                output.append("\n")
+                            }
+                        }
+                    }
+                    val warnings = response.optJSONArray("warnings")
+                    if (warnings != null) {
+                        for (i in 0 until warnings.length()) {
+                            output.append("\n⚠ ")
+                            output.append(warnings.optString(i))
+                        }
+                    }
+                    runOnUiThread {
+                        chatLog.append(output.toString() + "\n")
+                        sendButton.isEnabled = true
+                    }
+                } else {
+                    val response = requestJson(
+                        "/chat",
+                        JSONObject().put("message", message).put("session_id", sessionId),
+                        token
+                    )
+                    val answer = response.optString("answer", "Сервер вернул пустой ответ.")
+                    val elapsed = response.optDouble("generation_ms", -1.0)
+                    val mode = response.optString("mode", "unknown")
+                    val meta = if (elapsed >= 0) "\n[$mode • $elapsed мс]" else "\n[$mode]"
+                    runOnUiThread {
+                        chatLog.append("SWIN AI: $answer$meta\n")
+                        sendButton.isEnabled = true
+                    }
                 }
             } catch (error: Exception) {
                 runOnUiThread {
                     if (error is ApiException && error.statusCode == 401) {
                         clearLocalSession("Сессия истекла. Войди снова.")
                     } else {
-                        chatLog.append("Ошибка: \${error.message}\n")
+                        chatLog.append("Ошибка: ${error.message}\n")
                         sendButton.isEnabled = true
                     }
                 }
