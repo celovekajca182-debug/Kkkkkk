@@ -3,7 +3,7 @@
     "title": "Движение персонажа в Godot 4",
     "question": "Как сделать движение игрового персонажа в Godot 4 на GDScript?",
     "keywords": ["godot", "gdscript", "персонаж", "движение", "CharacterBody3D", "move_and_slide", "Input.get_vector", "velocity"],
-    "answer": "Для 3D-персонажа используй CharacterBody3D. Получи направление через Input.get_vector("move_left", "move_right", "move_forward", "move_back"), преобразуй его относительно камеры, задай velocity.x и velocity.z, обработай гравитацию в velocity.y и вызови move_and_slide() в _physics_process(delta). Важно: move_and_slide() вызывается без delta, а скорость задаётся в единицах в секунду. Для мобильного управления привяжи виртуальный джойстик к тем же действиям InputMap."
+    "answer": "Для 3D-персонажа используй CharacterBody3D. Получи направление через Input.get_vector с действиями move_left, move_right, move_forward и move_back, преобразуй его относительно камеры, задай velocity.x и velocity.z, обработай гравитацию в velocity.y и вызови move_and_slide() в _physics_process(delta). Важно: move_and_slide() вызывается без delta, а скорость задаётся в единицах в секунду. Для мобильного управления привяжи виртуальный джойстик к тем же действиям InputMap."
   },
   {
     "title": "Отладка ошибок GDScript",
@@ -57,13 +57,13 @@
     "title": "Gradle и AndroidX",
     "question": "Почему Gradle ругается на android.useAndroidX или не запускает daemon?",
     "keywords": ["gradle", "android", "androidx", "daemon", "jvm", "properties", "gradle.properties", "сборка"],
-    "answer": "Проверь android/gradle.properties: каждое свойство должно быть на отдельной строке. Корректный пример: org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8, затем отдельной строкой android.useAndroidX=true. Если \n попал в файл как два буквальных символа, Gradle может передать остаток строки в JVM как аргумент и не запустить daemon. Также используй версию Gradle, совместимую с Android Gradle Plugin проекта."
+    "answer": "Проверь android/gradle.properties: каждое свойство должно быть на отдельной строке. Корректный пример: org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8, затем отдельной строкой android.useAndroidX=true. Если буквальные символы обратная косая черта+n попали в файл, Gradle может передать остаток строки в JVM как аргумент и не запустить daemon. Также используй версию Gradle, совместимую с Android Gradle Plugin проекта."
   },
   {
     "title": "HTTP-запрос Android-приложения",
     "question": "Как Android-приложению отправить сообщение на собственный FastAPI сервер?",
     "keywords": ["android", "kotlin", "http", "https", "fastapi", "api", "json", "network", "thread"],
-    "answer": "В Android добавь разрешение android.permission.INTERNET в манифест. Отправляй POST-запрос на HTTPS endpoint /chat с заголовком Content-Type: application/json и JSON-телом {"message":"текст"}. Сетевые операции выполняй не в главном UI-потоке, используй таймауты, проверяй HTTP-код и обрабатывай errorStream. Не храни секретные ключи прямо в APK."
+    "answer": "В Android добавь разрешение android.permission.INTERNET в манифест. Отправляй POST-запрос на HTTPS endpoint /chat с заголовком Content-Type: application/json и JSON-телом с полем message. Сетевые операции выполняй не в главном UI-потоке, используй таймауты, проверяй HTTP-код и обрабатывай errorStream. Не храни секретные ключи прямо в APK."
   },
   {
     "title": "Безопасное модифицирование собственных игр",
