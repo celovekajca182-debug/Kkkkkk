@@ -358,6 +358,13 @@ class MainActivity : Activity() {
         endpointValue = base
         getPreferences(MODE_PRIVATE).edit().putString("api_base", base).apply()
 
+        val codingLanguageValues = listOf(
+            "auto", "python", "gdscript", "kotlin",
+            "javascript", "typescript", "html", "css", "json"
+        )
+        val selectedCodingLanguage = codingLanguageValues.getOrElse(languageSpinner.selectedItemPosition) { "auto" }
+        val includeCodingActivity = showCodingActivity
+
         chatInput.text.clear()
         chatLog.append(
             if (isCodeMode) "\nТы • задача: $message\nSWIN AI: изучаю документацию и готовлю код...\n"
@@ -368,16 +375,11 @@ class MainActivity : Activity() {
         thread {
             try {
                 if (isCodeMode) {
-                    val languageValues = listOf(
-                        "auto", "python", "gdscript", "kotlin",
-                        "javascript", "typescript", "html", "css", "json"
-                    )
-                    val language = languageValues.getOrElse(languageSpinner.selectedItemPosition) { "auto" }
                     val payload = JSONObject()
                         .put("task", message)
-                        .put("language", language)
+                        .put("language", selectedCodingLanguage)
                         .put("research_web", true)
-                        .put("show_activity", showCodingActivity)
+                        .put("show_activity", includeCodingActivity)
                     val response = requestJson("/code/assist", payload, token)
                     val output = StringBuilder()
                     output.append("\nSWIN AI • РЕЖИМ РАЗРАБОТКИ\n")
@@ -398,7 +400,7 @@ class MainActivity : Activity() {
                         output.append("\nКод не создан: проверь, загружены ли веса модели на сервер.\n")
                     }
 
-                    if (showCodingActivity) {
+                    if (includeCodingActivity) {
                         val plan = response.optJSONArray("plan")
                         if (plan != null && plan.length() > 0) {
                             output.append("\nПлан работы:\n")
