@@ -1,0 +1,51 @@
+name: Train SWIN Transformer
+
+on:
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: "Количество эпох учебного Transformer"
+        required: true
+        default: "15"
+  push:
+    branches: ["main"]
+    paths:
+      - "server/transformer.py"
+      - "server/train_transformer.py"
+      - "server/data/train.txt"
+      - "server/data/knowledge.json"
+      - "server/data/dialogue.jsonl"
+      - "server/requirements-transformer.txt"
+      - "tests/test_transformer.py"
+      - ".github/workflows/train-transformer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: server
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install -r server/requirements.txt
+          pip install -r server/requirements-transformer.txt --extra-index-url https://download.pytorch.org/whl/cpu
+      - name: Run all tests
+        run: python -m unittest discover -s tests -v
+      - name: Train SWIN Transformer from random initialization
+        working-directory: server
+        run: |
+          python train_transformer.py --epochs ${{ inputs.epochs || '15' }} --output models/swin-transformer.pt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swin-ai-transformer-weights
+          path: server/models/swin-transformer.pt
+          if-no-files-found: error
