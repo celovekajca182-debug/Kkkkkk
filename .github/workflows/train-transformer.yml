@@ -26,6 +26,7 @@ on:
       - "tests/test_transformer.py"
       - "tests/test_prepare_corpus.py"
       - "tests/test_training_corpus.py"
+      - "tests/test_prepare_coding_data.py"
       - ".github/workflows/train-transformer.yml"
 
 permissions:
