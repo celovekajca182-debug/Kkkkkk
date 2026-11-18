@@ -159,6 +159,36 @@ def get_current_user(
     return user
 
 
+def safe_small_talk(message: str) -> str | None:
+    """Return deterministic Russian replies for common greetings and small talk."""
+    normalized = re.sub(r"[^a-zа-яё0-9 ]", " ", message.lower()).strip()
+    normalized = re.sub(r"\s+", " ", normalized)
+    if re.fullmatch(r"(привет|здравствуй|здравствуйте|добрый день|доброе утро|добрый вечер|хай|салют)", normalized):
+        return "Привет! Я на связи. Напиши, что нужно сделать или объяснить."
+    if re.fullmatch(r"(как дела|как ты|как поживаешь|ты как)", normalized):
+        return "Всё нормально — я готов помогать. Пока мои собственные языковые навыки ещё ограничены, но я могу отвечать по темам, которым меня уже обучили."
+    if re.fullmatch(r"(спасибо|спс|благодарю)", normalized):
+        return "Пожалуйста! Если понадобится, продолжим."
+    if re.fullmatch(r"(пока|до свидания|до встречи)", normalized):
+        return "Пока! Возвращайся, когда понадобится помощь."
+    return None
+
+
+def looks_like_garbage(text: str) -> bool:
+    """Reject obvious byte-level model failures instead of showing random characters."""
+    value = text.strip()
+    if len(value) < 3 or "\ufffd" in value:
+        return True
+    letters = [ch.lower() for ch in value if ch.isalpha()]
+    if len(letters) >= 8:
+        if re.search(r"(.)\1{5,}", "".join(letters)):
+            return True
+        if len(set(letters)) / len(letters) < 0.18:
+            return True
+    words = re.findall(r"[a-zа-яё]{2,}", value.lower())
+    return len(letters) >= 16 and len(words) < 2
+
+
 def remember_turn(session_id: str, message: str, answer: str) -> int:
     turns = conversation_memory.setdefault(session_id, [])
     turns.append((message, answer))
@@ -290,6 +320,18 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     memory_key = f"{user['id']}:{session_id}"
     history = conversation_memory.get(memory_key, [])
 
+    small_talk = safe_small_talk(message)
+    if small_talk is not None:
+        turns = remember_turn(memory_key, message, small_talk)
+        return {
+            "answer": small_talk,
+            "mode": "safe_small_talk",
+            "source": "встроенный безопасный ответ",
+            "confidence": 1.0,
+            "memory_turns": turns,
+            "generation_ms": round((time.perf_counter() - started_at) * 1000, 1),
+        }
+
     # Retrieval returns known verified facts without invoking token-by-token generation.
     match = knowledge.search(message)
     if match is not None:
@@ -319,8 +361,12 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                 stop_at_newline=True,
             ).strip()
             answer = answer.split("\nПользователь:", 1)[0].strip()
-            if not answer:
-                answer = "Пока не смог сформировать связный ответ. Попробуй уточнить вопрос."
+            if not answer or looks_like_garbage(answer):
+                answer = (
+                    "Я пока не могу надёжно ответить на этот вопрос: текущая версия моей "
+                    "языковой модели иногда генерирует бессвязный текст. Попробуй задать "
+                    "вопрос по-другому или спросить о программировании и Godot."
+                )
             turns = remember_turn(memory_key, message, answer)
             elapsed = max(time.perf_counter() - started_at, 0.001)
             try:
