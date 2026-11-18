@@ -1,24 +1,35 @@
 name: Train SWIN AI
+
 on:
   workflow_dispatch:
     inputs:
       epochs:
-        description: "Количество эпох"
+        description: "Количество эпох для учебной RNN"
         required: true
         default: "30"
+
+permissions:
+  contents: read
+
 jobs:
   train:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: server
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -r server/requirements.txt
-      - name: Train model
+      - name: Install dependencies
+        run: pip install -r server/requirements.txt
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Train own model weights
         working-directory: server
         run: python train.py --data data/train.txt --epochs ${{ inputs.epochs }} --output model.npz
       - uses: actions/upload-artifact@v4
         with:
           name: swin-ai-model
           path: server/model.npz
+          if-no-files-found: error
