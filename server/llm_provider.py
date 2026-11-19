@@ -40,6 +40,8 @@ def generate_text(
     *,
     instructions: str,
     max_output_tokens: int = 1200,
+    model_override: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> str:
     """Generate text through the Responses API without storing provider state."""
     api_key = os.getenv("SWIN_LLM_API_KEY", "").strip()
@@ -50,18 +52,21 @@ def generate_text(
     if len(prompt) > 60_000:
         raise LLMProviderError("The generation prompt exceeds the configured limit.")
 
-    model = os.getenv("SWIN_REASONING_MODEL", "gpt-6.2-sol").strip()
+    model = (model_override or os.getenv("SWIN_REASONING_MODEL", "gpt-6.2-sol")).strip()
     if not model or len(model) > 120:
-        raise LLMProviderError("Invalid SWIN_REASONING_MODEL setting.")
+        raise LLMProviderError("Invalid reasoning model identifier.")
     output_limit = max(64, min(int(max_output_tokens), 8192))
+    effort = (reasoning_effort or os.getenv("SWIN_REASONING_EFFORT", "medium")).strip().lower()
+    if effort not in {"low", "medium", "high", "xhigh", "max"}:
+        raise LLMProviderError("Invalid reasoning effort setting.")
     payload = {
         "model": model,
-        "instructions": instructions[:6000],
-        "input": prompt,
+        "input": [
+            {"role": "developer", "content": instructions[:6000]},
+            {"role": "user", "content": prompt},
+        ],
         "max_output_tokens": output_limit,
-        "reasoning": {
-            "effort": os.getenv("SWIN_REASONING_EFFORT", "medium").strip().lower()
-        },
+        "reasoning": {"effort": effort},
         "store": False,
     }
     request = urllib.request.Request(
