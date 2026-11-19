@@ -76,6 +76,31 @@ class LlmProviderTests(unittest.TestCase):
             "https://inference.example/v1/chat/completions",
         )
 
+    def test_role_specific_endpoints_override_shared_gateway(self):
+        payload = {"choices": [{"message": {"content": "ok"}}]}
+        with (
+            patch.object(llm_provider, "BASE_URL", "https://shared.example/v1"),
+            patch.object(llm_provider, "CHAT_BASE_URL", "https://chat.example/v1"),
+            patch.object(llm_provider, "CODE_BASE_URL", "https://code.example/v1"),
+            patch.object(llm_provider, "CHAT_API_KEY", "chat-secret"),
+            patch.object(llm_provider, "CODE_API_KEY", "code-secret"),
+            patch(
+                "llm_provider.urllib.request.urlopen",
+                side_effect=[FakeResponse(payload), FakeResponse(payload)],
+            ) as urlopen,
+        ):
+            self.assertTrue(llm_provider.provider_configured("chat"))
+            self.assertTrue(llm_provider.provider_configured("code"))
+            self.assertTrue(llm_provider.provider_configured())
+            llm_provider.generate_model_text("chat prompt", role="chat")
+            llm_provider.generate_model_text("code prompt", role="code")
+
+        chat_request, code_request = [call.args[0] for call in urlopen.call_args_list]
+        self.assertEqual(chat_request.full_url, "https://chat.example/v1/chat/completions")
+        self.assertEqual(code_request.full_url, "https://code.example/v1/chat/completions")
+        self.assertEqual(chat_request.get_header("Authorization"), "Bearer chat-secret")
+        self.assertEqual(code_request.get_header("Authorization"), "Bearer code-secret")
+
     def test_empty_prompt_is_rejected(self):
         with patch.object(llm_provider, "BASE_URL", "https://inference.example/v1"):
             with self.assertRaises(ValueError):
