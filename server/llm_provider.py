@@ -12,7 +12,7 @@ import urllib.request
 from typing import Literal
 
 CHAT_MODEL = os.getenv(
-    "SWIN_CHAT_MODEL", "Qwen/Qwen3-4B-Instruct-2507"
+    "SWIN_CHAT_MODEL", "Qwen/Qwen3-4B-Thinking-2507"
 ).strip()
 CODE_MODEL = os.getenv(
     "SWIN_CODE_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct"
