@@ -719,6 +719,113 @@ class MainActivity : Activity() {
             .show()
     }
 
+
+    private fun codingUiLabels(language: String): Map<String, String> {
+        val code = language.lowercase().substringBefore("-")
+        return when (code) {
+            "en" -> mapOf(
+                "heading" to "SWIN AI • CODING MODE", "status" to "Status",
+                "syntax" to "Syntax check", "recheck" to "VERIFICATION",
+                "research" to "Web research", "static" to "Static analysis",
+                "cross" to "Reference cross-check", "runtime" to "Runtime tests",
+                "code" to "CODE",
+                "noCode" to "No code passed the available checks. Clarify the task and try again.",
+                "plan" to "Work plan", "stages" to "Stages", "sources" to "Documentation sources",
+                "webSource" to "Web source", "time" to "Processing time", "ms" to "ms"
+            )
+            "de" -> mapOf(
+                "heading" to "SWIN AI • ENTWICKLUNGSMODUS", "status" to "Status",
+                "syntax" to "Syntaxprüfung", "recheck" to "ÜBERPRÜFUNG",
+                "research" to "Webrecherche", "static" to "Statische Analyse",
+                "cross" to "Quellenabgleich", "runtime" to "Laufzeittests",
+                "code" to "CODE",
+                "noCode" to "Es wurde kein Code erstellt, der die verfügbaren Prüfungen bestanden hat. Präzisiere die Aufgabe und versuche es erneut.",
+                "plan" to "Arbeitsplan", "stages" to "Phasen", "sources" to "Dokumentationsquellen",
+                "webSource" to "Webquelle", "time" to "Verarbeitungszeit", "ms" to "ms"
+            )
+            "es" -> mapOf(
+                "heading" to "SWIN AI • MODO DE DESARROLLO", "status" to "Estado",
+                "syntax" to "Comprobación de sintaxis", "recheck" to "VERIFICACIÓN",
+                "research" to "Búsqueda web", "static" to "Análisis estático",
+                "cross" to "Contraste de fuentes", "runtime" to "Pruebas de ejecución",
+                "code" to "CÓDIGO",
+                "noCode" to "No se pudo preparar código que superara las comprobaciones disponibles. Aclara la tarea e inténtalo de nuevo.",
+                "plan" to "Plan de trabajo", "stages" to "Etapas", "sources" to "Fuentes de documentación",
+                "webSource" to "Fuente web", "time" to "Tiempo de procesamiento", "ms" to "ms"
+            )
+            "fr" -> mapOf(
+                "heading" to "SWIN AI • MODE DÉVELOPPEMENT", "status" to "Statut",
+                "syntax" to "Vérification syntaxique", "recheck" to "VÉRIFICATION",
+                "research" to "Recherche Web", "static" to "Analyse statique",
+                "cross" to "Vérification des sources", "runtime" to "Tests d’exécution",
+                "code" to "CODE",
+                "noCode" to "Aucun code n’a réussi les vérifications disponibles. Précisez la tâche et réessayez.",
+                "plan" to "Plan de travail", "stages" to "Étapes", "sources" to "Sources documentaires",
+                "webSource" to "Source Web", "time" to "Temps de traitement", "ms" to "ms"
+            )
+            "zh" -> mapOf(
+                "heading" to "SWIN AI • 开发模式", "status" to "状态",
+                "syntax" to "语法检查", "recheck" to "验证",
+                "research" to "网页检索", "static" to "静态分析",
+                "cross" to "参考资料核对", "runtime" to "运行测试",
+                "code" to "代码",
+                "noCode" to "没有代码通过当前可用的检查。请补充任务要求后重试。",
+                "plan" to "工作计划", "stages" to "处理阶段", "sources" to "文档来源",
+                "webSource" to "网页来源", "time" to "处理时间", "ms" to "毫秒"
+            )
+            "uk" -> mapOf(
+                "heading" to "SWIN AI • РЕЖИМ РОЗРОБКИ", "status" to "Статус",
+                "syntax" to "Перевірка синтаксису", "recheck" to "ПЕРЕВІРКА",
+                "research" to "Пошук в інтернеті", "static" to "Статичний аналіз",
+                "cross" to "Зіставлення джерел", "runtime" to "Запуск тестів",
+                "code" to "КОД",
+                "noCode" to "Не вдалося підготувати код, що пройшов доступні перевірки. Уточни завдання та спробуй ще раз.",
+                "plan" to "План роботи", "stages" to "Етапи", "sources" to "Джерела документації",
+                "webSource" to "Вебджерело", "time" to "Час обробки", "ms" to "мс"
+            )
+            "pt" -> mapOf(
+                "heading" to "SWIN AI • MODO DE DESENVOLVIMENTO", "status" to "Estado",
+                "syntax" to "Verificação de sintaxe", "recheck" to "VERIFICAÇÃO",
+                "research" to "Pesquisa na web", "static" to "Análise estática",
+                "cross" to "Conferência de fontes", "runtime" to "Testes de execução",
+                "code" to "CÓDIGO",
+                "noCode" to "Nenhum código passou pelas verificações disponíveis. Esclareça a tarefa e tente novamente.",
+                "plan" to "Plano de trabalho", "stages" to "Etapas", "sources" to "Fontes da documentação",
+                "webSource" to "Fonte da web", "time" to "Tempo de processamento", "ms" to "ms"
+            )
+            "it" -> mapOf(
+                "heading" to "SWIN AI • MODALITÀ SVILUPPO", "status" to "Stato",
+                "syntax" to "Controllo sintattico", "recheck" to "VERIFICA",
+                "research" to "Ricerca sul web", "static" to "Analisi statica",
+                "cross" to "Confronto delle fonti", "runtime" to "Test di esecuzione",
+                "code" to "CODICE",
+                "noCode" to "Nessun codice ha superato i controlli disponibili. Chiarisci il compito e riprova.",
+                "plan" to "Piano di lavoro", "stages" to "Fasi", "sources" to "Fonti della documentazione",
+                "webSource" to "Fonte web", "time" to "Tempo di elaborazione", "ms" to "ms"
+            )
+            "ja" -> mapOf(
+                "heading" to "SWIN AI • 開発モード", "status" to "状態",
+                "syntax" to "構文チェック", "recheck" to "検証",
+                "research" to "Web 検索", "static" to "静的解析",
+                "cross" to "参考資料の照合", "runtime" to "実行テスト",
+                "code" to "コード",
+                "noCode" to "利用可能なチェックに合格したコードを作成できませんでした。タスクを詳しくして再試行してください。",
+                "plan" to "作業計画", "stages" to "処理段階", "sources" to "ドキュメントの参照元",
+                "webSource" to "Web ソース", "time" to "処理時間", "ms" to "ミリ秒"
+            )
+            else -> mapOf(
+                "heading" to "SWIN AI • РЕЖИМ РАЗРАБОТКИ", "status" to "Статус",
+                "syntax" to "Проверка синтаксиса", "recheck" to "ПЕРЕПРОВЕРКА",
+                "research" to "Поиск в интернете", "static" to "Статический анализ",
+                "cross" to "Сверка источников", "runtime" to "Запуск тестов",
+                "code" to "КОД",
+                "noCode" to "Не удалось подготовить код, который прошёл проверку. Уточни задачу или попробуй снова.",
+                "plan" to "План работы", "stages" to "Этапы", "sources" to "Источники документации",
+                "webSource" to "Веб-источник", "time" to "Время обработки", "ms" to "мс"
+            )
+        }
+    }
+
     private fun showResponseLanguageSettings() {
         val codes = arrayOf("auto", "ru", "en", "de", "es", "fr", "zh", "uk", "pt", "it", "ja")
         val labels = arrayOf(
@@ -1138,24 +1245,30 @@ class MainActivity : Activity() {
                         .put("response_language", selectedResponseLanguage)
                     val response = requestJson("/code/assist", payload, token)
                     val output = StringBuilder()
-                    output.append("\nSWIN AI • РЕЖИМ РАЗРАБОТКИ\n")
-                    output.append(response.optString("summary", "Результат готов."))
-                    output.append("\nСтатус: ")
+                    val actualResponseLanguage = response.optString("response_language", selectedResponseLanguage)
+                    val labels = codingUiLabels(actualResponseLanguage)
+                    output.append("\n")
+                    output.append(labels["heading"])
+                    output.append("\n")
+                    output.append(response.optString("summary", ""))
+                    output.append("\n")
+                    output.append(labels["status"])
+                    output.append(": ")
                     output.append(response.optString("status", "unknown"))
                     val validation = response.optJSONObject("validation")
                     if (validation != null) {
-                        output.append("\nПроверка синтаксиса: ")
+                        output.append("\n\${labels["syntax"]}: ")
                         output.append(validation.optString("message", "не выполнена"))
                     }
                     val verification = response.optJSONObject("verification")
                     if (verification != null) {
-                        output.append("\n\nПЕРЕПРОВЕРКА:")
+                        output.append("\n\n\${labels["recheck"]}:")
                         val checkNames = listOf("research", "syntax", "cross_check", "runtime_tests")
                         val checkLabels = mapOf(
-                            "research" to "Поиск в интернете",
-                            "syntax" to "Статический анализ",
-                            "cross_check" to "Сверка источников",
-                            "runtime_tests" to "Запуск тестов"
+                            "research" to (labels["research"] ?: "Research"),
+                            "syntax" to (labels["static"] ?: "Static analysis"),
+                            "cross_check" to (labels["cross"] ?: "Cross-check"),
+                            "runtime_tests" to (labels["runtime"] ?: "Runtime tests")
                         )
                         for (key in checkNames) {
                             val check = verification.optJSONObject(key) ?: continue
@@ -1172,17 +1285,19 @@ class MainActivity : Activity() {
                     }
                     val code = response.optString("code", "")
                     if (code.isNotBlank()) {
-                        output.append("\n\nКОД:\n")
+                        output.append("\n\n\${labels["code"]}:\n")
                         output.append(code)
                         output.append("\n")
                     } else {
-                        output.append("\nНе удалось подготовить код, который прошёл проверку. Уточни задачу или попробуй снова.\n")
+                        output.append("\n")
+                        output.append(labels["noCode"])
+                        output.append("\n")
                     }
 
                     if (includeCodingActivity) {
                         val plan = response.optJSONArray("plan")
                         if (plan != null && plan.length() > 0) {
-                            output.append("\nПлан работы:\n")
+                            output.append("\n\${labels["plan"]}:\n")
                             for (i in 0 until plan.length()) {
                                 output.append("• ")
                                 output.append(plan.optString(i))
@@ -1191,7 +1306,7 @@ class MainActivity : Activity() {
                         }
                         val activity = response.optJSONArray("activity")
                         if (activity != null && activity.length() > 0) {
-                            output.append("\nЭтапы:\n")
+                            output.append("\n\${labels["stages"]}:\n")
                             for (i in 0 until activity.length()) {
                                 val item = activity.optJSONObject(i) ?: continue
                                 output.append("• ")
@@ -1205,11 +1320,11 @@ class MainActivity : Activity() {
                     // Research sources remain visible even when the detailed activity log is hidden.
                     val refs = response.optJSONArray("references")
                     if (refs != null && refs.length() > 0) {
-                        output.append("\nИсточники документации:\n")
+                        output.append("\n\${labels["sources"]}:\n")
                         for (i in 0 until refs.length()) {
                             val item = refs.optJSONObject(i) ?: continue
                             output.append("• ")
-                            output.append(item.optString("source_type", "Веб-источник"))
+                            output.append(item.optString("source_type", labels["webSource"] ?: "Web source"))
                             output.append(": ")
                             output.append(item.optString("title"))
                             output.append(" — ")
@@ -1219,9 +1334,9 @@ class MainActivity : Activity() {
                     }
                     val elapsed = response.optDouble("elapsed_ms", -1.0)
                     if (elapsed >= 0) {
-                        output.append("\nВремя обработки: ")
+                        output.append("\n\${labels["time"]}: ")
                         output.append(elapsed)
-                        output.append(" мс")
+                        output.append(" " + (labels["ms"] ?: "ms"))
                     }
                     val warnings = response.optJSONArray("warnings")
                     if (warnings != null) {
@@ -1237,7 +1352,7 @@ class MainActivity : Activity() {
                             copyCodeButton.isEnabled = true
                         }
                         if (code.isNotBlank()) {
-                            val summary = output.toString().substringBefore("\n\nКОД:\n").trim()
+                            val summary = output.toString().substringBefore("\n\n${labels["code"]}:\n").trim()
                             appendChatMessage("assistant", summary)
                             appendChatMessage("assistant", code, true, code)
                             cacheLocalMessage("assistant", summary + "\n\n[SWIN_CODE_BLOCK]\n" + code)
