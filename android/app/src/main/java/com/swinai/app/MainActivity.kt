@@ -1844,7 +1844,7 @@ class MainActivity : Activity() {
                 }
             } catch (_: Exception) {
                 runOnUiThread {
-                    if (chatMessages.childCount == 0) {
+                    if (sessionId == requestedSessionId && chatMessages.childCount == 0) {
                         showWelcomePanel()
                     }
                 }
