@@ -21,6 +21,14 @@ IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d\s().-]{7,}\d)(?!\w)")
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 LETTER_RE = re.compile(r"[A-Za-zА-Яа-яЁё]")
+
+OASST_LANGUAGE_CODES = ("ru", "en", "de", "es", "fr", "zh")
+FINEWEB2_MULTILINGUAL_CONFIGS = {
+    "deu_Latn": "de",
+    "spa_Latn": "es",
+    "fra_Latn": "fr",
+    "cmn_Hani": "zh",
+}
 REJECT_LABELS = {
     "spam",
     "lang_mismatch",
@@ -49,6 +57,41 @@ def russian_letter_ratio(text: str) -> float:
     if not letters:
         return 0.0
     return len(CYRILLIC_RE.findall(text)) / len(letters)
+
+
+def script_letter_ratio(text: str, language: str) -> float:
+    """Measure the share of letters belonging to the script expected for a language."""
+    letters = [char for char in text if char.isalpha()]
+    if not letters:
+        return 0.0
+    language = language.lower().split("-", 1)[0]
+    if language in {"ru", "uk"}:
+        return sum("CYRILLIC" in unicodedata.name(char, "") for char in letters) / len(letters)
+    if language == "zh":
+        return sum(
+            "CJK UNIFIED IDEOGRAPH" in unicodedata.name(char, "")
+            or "CJK COMPATIBILITY IDEOGRAPH" in unicodedata.name(char, "")
+            for char in letters
+        ) / len(letters)
+    return sum("LATIN" in unicodedata.name(char, "") for char in letters) / len(letters)
+
+
+def normalize_oasst_language(value: object) -> str:
+    candidate = str(value or "").strip().lower().replace("_", "-")
+    candidate = candidate.split("-", 1)[0]
+    return candidate if candidate in OASST_LANGUAGE_CODES else ""
+
+
+def truncate_document(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    truncated = text[:max_chars]
+    # Word-boundary truncation is useful for spaced scripts; do not empty CJK text
+    # merely because a document has no ASCII spaces.
+    boundary = truncated.rfind(" ")
+    if boundary >= max_chars // 2:
+        truncated = truncated[:boundary]
+    return truncated.strip()
 
 
 def labels_have_rejection(labels) -> bool:
@@ -82,7 +125,7 @@ def labels_have_rejection(labels) -> bool:
 
 
 def valid_oasst_row(row: dict) -> bool:
-    if row.get("lang") != "ru":
+    if normalize_oasst_language(row.get("lang")) not in OASST_LANGUAGE_CODES:
         return False
     if row.get("deleted") is True or row.get("synthetic") is True:
         return False
@@ -95,13 +138,17 @@ def valid_oasst_row(row: dict) -> bool:
 
 
 def extract_oasst_pairs(rows: Iterable[dict], max_pairs: int, seed: int = 17):
-    """Pair Russian assistant replies with their reviewed Russian parent prompts."""
+    """Pair reviewed OASST prompts/replies in six well-represented languages.
+
+    Samples are balanced round-robin so English or Spanish cannot crowd out
+    Russian, German, French or Chinese in the limited SFT budget.
+    """
     by_id = {
         row.get("message_id"): row
         for row in rows
         if row.get("message_id")
     }
-    pairs = []
+    buckets: dict[str, list[dict]] = {language: [] for language in OASST_LANGUAGE_CODES}
     seen = set()
     for answer in by_id.values():
         if answer.get("role") != "assistant" or not valid_oasst_row(answer):
@@ -109,17 +156,42 @@ def extract_oasst_pairs(rows: Iterable[dict], max_pairs: int, seed: int = 17):
         prompt = by_id.get(answer.get("parent_id"))
         if prompt is None or prompt.get("role") != "prompter" or not valid_oasst_row(prompt):
             continue
+        language = normalize_oasst_language(prompt.get("lang"))
+        if language != normalize_oasst_language(answer.get("lang")):
+            continue
         question_text = clean_text(prompt.get("text", ""))
         answer_text = clean_text(answer.get("text", ""))
-        if russian_letter_ratio(question_text) < 0.25 or russian_letter_ratio(answer_text) < 0.25:
+        if (
+            script_letter_ratio(question_text, language) < 0.18
+            or script_letter_ratio(answer_text, language) < 0.18
+        ):
             continue
-        key = (question_text.casefold(), answer_text.casefold())
+        key = (language, question_text.casefold(), answer_text.casefold())
         if key in seen:
             continue
         seen.add(key)
-        pairs.append({"question": question_text, "answer": answer_text})
-    random.Random(seed).shuffle(pairs)
-    return pairs[:max_pairs]
+        buckets[language].append({
+            "question": question_text,
+            "answer": answer_text,
+            "language": language,
+        })
+
+    for index, language in enumerate(OASST_LANGUAGE_CODES):
+        random.Random(seed + index).shuffle(buckets[language])
+
+    selected: list[dict] = []
+    positions = {language: 0 for language in OASST_LANGUAGE_CODES}
+    while len(selected) < max_pairs:
+        added_this_round = False
+        for language in OASST_LANGUAGE_CODES:
+            position = positions[language]
+            if position < len(buckets[language]) and len(selected) < max_pairs:
+                selected.append(buckets[language][position])
+                positions[language] += 1
+                added_this_round = True
+        if not added_this_round:
+            break
+    return selected
 
 
 def split_items(items: list, validation_fraction: float, seed: int):
@@ -132,8 +204,16 @@ def split_items(items: list, validation_fraction: float, seed: int):
     return shuffled[validation_count:], shuffled[:validation_count]
 
 
-def load_fineweb_documents(max_documents: int, max_chars: int, max_doc_chars: int,
-                           min_doc_chars: int, validation_fraction: float, seed: int):
+def load_fineweb_language_documents(
+    config: str,
+    language: str,
+    max_documents: int,
+    max_chars: int,
+    max_doc_chars: int,
+    min_doc_chars: int,
+    validation_fraction: float,
+    seed: int,
+):
     try:
         from datasets import load_dataset
     except ImportError as error:
@@ -141,12 +221,12 @@ def load_fineweb_documents(max_documents: int, max_chars: int, max_doc_chars: in
 
     stream = load_dataset(
         "epfml/FineWeb2-HQ",
-        "rus_Cyrl",
+        config,
         split="train",
         streaming=True,
-    )
-    stream = stream.shuffle(seed=seed, buffer_size=1000)
-    train_docs, validation_docs = [], []
+    ).shuffle(seed=seed, buffer_size=1000)
+    train_docs: list[str] = []
+    validation_docs: list[str] = []
     total_chars = 0
     rng = random.Random(seed)
 
@@ -154,15 +234,12 @@ def load_fineweb_documents(max_documents: int, max_chars: int, max_doc_chars: in
         text = clean_text(row.get("text", ""))
         if len(text) < min_doc_chars:
             continue
-        if len(text) > max_doc_chars:
-            text = text[:max_doc_chars].rsplit(" ", 1)[0]
-        if russian_letter_ratio(text) < 0.35:
+        text = truncate_document(text, max_doc_chars)
+        if script_letter_ratio(text, language) < 0.35:
             continue
         language_score = row.get("language_score")
         if language_score is not None and float(language_score) < 0.85:
             continue
-        # FineWeb2-HQ уже является отбором top-10% по оценке качества.
-        # Если документ помечен как часть дубликатного кластера, пропускаем его.
         cluster_size = row.get("minhash_cluster_size")
         if cluster_size is not None and int(cluster_size) > 1:
             continue
@@ -175,8 +252,22 @@ def load_fineweb_documents(max_documents: int, max_chars: int, max_doc_chars: in
             break
 
     if not train_docs:
-        raise RuntimeError("FineWeb2-HQ не дал пригодных русскоязычных документов.")
+        raise RuntimeError(f"FineWeb2-HQ не дал пригодных документов для языка {language}.")
     return train_docs, validation_docs, total_chars
+
+
+def load_fineweb_documents(
+    max_documents: int,
+    max_chars: int,
+    max_doc_chars: int,
+    min_doc_chars: int,
+    validation_fraction: float,
+    seed: int,
+):
+    return load_fineweb_language_documents(
+        "rus_Cyrl", "ru", max_documents, max_chars, max_doc_chars,
+        min_doc_chars, validation_fraction, seed,
+    )
 
 
 def load_finewiki_documents(
@@ -322,6 +413,9 @@ def main():
     parser.add_argument("--wiki-max-chars", type=int, default=600000)
     parser.add_argument("--classic-documents", type=int, default=400)
     parser.add_argument("--classic-max-chars", type=int, default=250000)
+    parser.add_argument("--multilingual-web-languages", default="deu_Latn,spa_Latn,fra_Latn,cmn_Hani")
+    parser.add_argument("--multilingual-web-documents", type=int, default=300)
+    parser.add_argument("--multilingual-web-max-chars", type=int, default=100000)
     parser.add_argument("--max-doc-chars", type=int, default=3000)
     parser.add_argument("--min-doc-chars", type=int, default=250)
     parser.add_argument("--oasst-max-pairs", type=int, default=1800)
@@ -335,6 +429,12 @@ def main():
         parser.error("Лимит Wikipedia-корпуса слишком мал.")
     if args.classic_documents < 10 or args.classic_max_chars < 10000:
         parser.error("Лимит ru-classic-корпуса слишком мал.")
+    if args.multilingual_web_documents < 10 or args.multilingual_web_max_chars < 10000:
+        parser.error("Лимит дополнительного мультиязычного веб-корпуса слишком мал.")
+    requested_configs = [item.strip() for item in args.multilingual_web_languages.split(",") if item.strip()]
+    unknown_configs = sorted(set(requested_configs) - set(FINEWEB2_MULTILINGUAL_CONFIGS))
+    if unknown_configs:
+        parser.error("Неподдерживаемые FineWeb2-HQ конфиги: " + ", ".join(unknown_configs))
     if not 0.05 <= args.validation_fraction <= 0.2:
         parser.error("--validation-fraction должен быть от 0.05 до 0.2.")
 
@@ -363,6 +463,25 @@ def main():
         args.validation_fraction,
         args.seed + 2,
     )
+    multilingual_web = {}
+    for index, config in enumerate(requested_configs):
+        language = FINEWEB2_MULTILINGUAL_CONFIGS[config]
+        train_docs, validation_docs, char_count = load_fineweb_language_documents(
+            config,
+            language,
+            args.multilingual_web_documents,
+            args.multilingual_web_max_chars,
+            args.max_doc_chars,
+            args.min_doc_chars,
+            args.validation_fraction,
+            args.seed + 10 + index,
+        )
+        multilingual_web[language] = {
+            "config": config,
+            "train": train_docs,
+            "validation": validation_docs,
+            "characters": char_count,
+        }
 
     try:
         from datasets import load_dataset
@@ -381,7 +500,11 @@ def main():
     write_text(output / "finewiki_ru_validation.txt", wiki_valid)
     write_text(output / "ru_classic_train.txt", classic_train)
     write_text(output / "ru_classic_validation.txt", classic_valid)
-    write_jsonl(output / "openassistant_ru_train.jsonl", sft_train)
+    for language, documents in multilingual_web.items():
+        language_dir = output / "multilingual"
+        write_text(language_dir / f"fineweb2_{language}_train.txt", documents["train"])
+        write_text(language_dir / f"fineweb2_{language}_validation.txt", documents["validation"])
+    write_jsonl(output / "openassistant_multilingual_train.jsonl", sft_train)
     write_jsonl(output / "openassistant_ru_validation.jsonl", sft_valid)
 
     manifest = {
@@ -421,13 +544,30 @@ def main():
             "total_characters_capped": classic_chars,
             "purpose": "small style/language supplement only; not a modern factual QA source",
         },
+        "fineweb2_multilingual": {
+            "dataset": "epfml/FineWeb2-HQ",
+            "license": "ODC-By-1.0; subject to CommonCrawl terms",
+            "languages": {
+                language: {
+                    "config": documents["config"],
+                    "train_documents": len(documents["train"]),
+                    "validation_documents": len(documents["validation"]),
+                    "total_characters_capped": documents["characters"],
+                }
+                for language, documents in multilingual_web.items()
+            },
+        },
         "openassistant": {
             "dataset": "OpenAssistant/oasst1",
             "license": "Apache-2.0",
             "train_pairs": len(sft_train),
             "validation_pairs": len(sft_valid),
+            "train_pairs_by_language": {
+                language: sum(pair.get("language") == language for pair in sft_train)
+                for language in OASST_LANGUAGE_CODES
+            },
             "filters": [
-                "lang=ru",
+                "lang in ru/en/de/es/fr/zh",
                 "review_result=true",
                 "not deleted or synthetic",
                 "paired assistant message with its parent prompter message",
