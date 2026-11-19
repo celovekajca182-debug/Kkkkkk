@@ -706,7 +706,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     )
     local_match = knowledge.search(message) if response_language == "ru" else None
 
-    if local_match is not None and not research_requested:
+    if local_match is not None and not research_requested and local_match["score"] >= 0.45:
         return finish(
             local_match["answer"],
             "local_knowledge",
@@ -756,7 +756,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                 )
                 if references:
                     source_lines = [
-                        f"[{index}] {item['title']} — {item['url']}"
+                        f"[{index}] {item['title']} ({item.get('source_type', 'веб-источник')}) — {item['url']}"
                         for index, item in enumerate(references[:4], 1)
                     ]
                     answer += "\n\nИсточники:\n" + "\n".join(source_lines)
@@ -849,9 +849,11 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
 @app.post("/vision/analyze")
 def analyze_attached_images(
     request: ImageAnalysisRequest,
+    http_request: Request,
     user: dict = Depends(get_current_user),
 ):
     """Analyze private image uploads without retaining their binary contents."""
+    enforce_auth_rate_limit(http_request, f"vision:{user['id']}", 18)
     if not vision_enabled():
         raise HTTPException(
             status_code=503,
