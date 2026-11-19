@@ -113,25 +113,9 @@ class CodingAgentTests(unittest.TestCase):
         self.assertTrue(prompt.startswith("Response language: Russian."))
         self.assertLessEqual(len(PairBPETokenizer.encode(prompt)), 252)
 
-    def test_search_covers_general_internet_and_rejects_insecure_links(self):
-        fake_module = types.SimpleNamespace(
-            DDGS=lambda **kwargs: types.SimpleNamespace(
-                text=lambda *args, **kw: [
-                    {"title": "Community", "href": "https://stackoverflow.com/questions/1", "body": "Community example"},
-                    {"title": "Docs", "href": "https://docs.python.org/3/", "body": "Python docs"},
-                    {"title": "Unsafe", "href": "http://example.com", "body": "No TLS"},
-                    {"title": "Local", "href": "https://127.0.0.1/private", "body": "Local"},
-                    {"title": "Bad", "href": "javascript:alert(1)", "body": "Bad"},
-                ]
-            )
-        )
-        with patch.dict(sys.modules, {"ddgs": fake_module}):
-            results = search_documentation("parse json", "python")
-        urls = [item["url"] for item in results]
-        self.assertIn("https://stackoverflow.com/questions/1", urls)
-        self.assertIn("https://docs.python.org/3/", urls)
-        self.assertTrue(all(url.startswith("https://") for url in urls))
-        self.assertEqual(results[0]["trust"], "primary")
+    def test_remote_documentation_search_is_disabled_in_local_only_mode(self):
+        self.assertEqual(search_documentation("parse json", "python"), [])
+        self.assertEqual(search_documentation("Godot 4 node API", "gdscript"), [])
 
     def test_corrupt_repeated_generation_is_rejected(self):
         self.assertTrue(looks_like_garbage_code("оооооооооооооооооооо"))
