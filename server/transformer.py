@@ -19,6 +19,45 @@ class ByteTokenizer:
         return bytes(int(token_id) for token_id in token_ids).decode("utf-8", errors="replace")
 
 
+class CharTokenizer:
+    """Unicode character tokenizer: Russian letters and code symbols are one token each."""
+    UNK = "<UNK>"
+
+    def __init__(self, vocabulary: list[str]):
+        unique = list(dict.fromkeys(vocabulary))
+        if not unique or unique[0] != self.UNK:
+            unique = [self.UNK] + [char for char in unique if char != self.UNK]
+        self.vocabulary = unique
+        self.stoi = {char: index for index, char in enumerate(unique)}
+        self.vocab_size = len(unique)
+
+    @classmethod
+    def from_texts(cls, texts, max_vocab: int = 4096):
+        from collections import Counter
+        counts = Counter(
+            char for text in texts
+            for char in text
+            if char.isprintable() or char in "\n\r\t"
+        )
+        frequent = [char for char, _ in counts.most_common(max(1, max_vocab - 1))]
+        return cls([cls.UNK] + sorted(char for char in frequent if char != cls.UNK))
+
+    def encode(self, text: str) -> list[int]:
+        unknown_id = self.stoi[self.UNK]
+        return [self.stoi.get(char, unknown_id) for char in text]
+
+    def decode(self, token_ids: list[int]) -> str:
+        result = []
+        for token_id in token_ids:
+            index = int(token_id)
+            if 0 <= index < self.vocab_size:
+                char = self.vocabulary[index]
+                result.append("\ufffd" if char == self.UNK else char)
+            else:
+                result.append("\ufffd")
+        return "".join(result)
+
+
 class SWINMultiheadAttention(nn.Module):
     """Multi-head causal attention with incremental key/value caching.
 
