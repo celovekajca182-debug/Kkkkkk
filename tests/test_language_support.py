@@ -1,6 +1,7 @@
 import unittest
 
 from language_support import (
+    code_assist_copy,
     SUPPORTED_CHAT_LANGUAGES,
     detect_response_language,
     format_chat_prompt,
@@ -60,6 +61,15 @@ class LanguageSupportTests(unittest.TestCase):
         self.assertIn("SWIN AI", localized_small_talk("こんにちは", "ja"))
         self.assertIn("信頼できる", localized_fallback("ja"))
         self.assertIn("confiável", localized_fallback("pt"))
+
+    def test_code_assist_copy_exists_for_every_chat_language(self):
+        for language in ("ru", "en", "de", "es", "fr", "zh", "uk", "pt", "it", "ja"):
+            with self.subTest(language=language):
+                copy = code_assist_copy(language)
+                self.assertEqual(len(copy["plan"]), 3)
+                self.assertIn("draft_validated", copy["summary"])
+                self.assertIn("passed", copy["validation"])
+                self.assertTrue(copy["warnings"]["runtime"])
 
     def test_language_catalog_has_no_empty_labels(self):
         self.assertEqual(
