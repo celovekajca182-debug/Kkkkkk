@@ -119,6 +119,7 @@ class CodeAssistRequest(BaseModel):
     research_web: bool = True
     show_activity: bool = False
     project_context: str = Field(default="", max_length=4000)
+    session_id: str = Field(default="", max_length=80)
 
 
 class ClearMemoryRequest(BaseModel):
@@ -335,6 +336,17 @@ def code_assist(
         raise HTTPException(status_code=422, detail=str(error)) from error
     result["elapsed_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
     result["model_loaded"] = transformer_model is not None
+    if request.session_id.strip():
+        assistant_text = result.get("summary", "Результат режима разработки.")
+        generated_code = result.get("code", "")
+        if generated_code:
+            assistant_text += "\\n\\n" + generated_code
+        chat_history.save_turn(
+            int(user["id"]),
+            request.session_id.strip(),
+            request.task.strip(),
+            assistant_text[:120000],
+        )
     return result
 
 
