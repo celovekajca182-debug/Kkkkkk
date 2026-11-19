@@ -1074,7 +1074,7 @@ class MainActivity : Activity() {
                             if (entries > 100) throw IllegalArgumentException("В архиве слишком много файлов.")
                             val name = entry.name
                             if (
-                                name.startsWith("/") || name.contains("\\\\") ||
+                                name.startsWith("/") || name.contains(92.toChar()) ||
                                 name.contains("\u0000") || name.contains(":") ||
                                 name.split("/").any { it == ".." || it == "." }
                             ) {
@@ -1112,7 +1112,7 @@ class MainActivity : Activity() {
                                         throw IllegalArgumentException("Файлы архива превышают лимит рабочего пространства.")
                                     }
                                     val decoded = String(entryBytes, Charsets.UTF_8)
-                                    if (decoded.contains('\\uFFFD') || entryBytes.contains(0.toByte())) {
+                                    if (decoded.contains(0xFFFD.toChar()) || entryBytes.contains(0.toByte())) {
                                         throw IllegalArgumentException("Архив содержит бинарные файлы. Импортируются только текстовые исходники.")
                                     }
                                     if (looseFiles.size >= 80) {
