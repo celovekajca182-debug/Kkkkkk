@@ -77,6 +77,50 @@ class ProjectAgentTests(unittest.TestCase):
                 text_generator=lambda prompt, count: "not json",
             )
 
+    def test_local_python_scaffold_has_a_real_entry_point_and_test(self):
+        result = generate_local_project_scaffold(
+            "Создай приложение учёта задач на Python",
+            "python",
+        )
+        paths = {item["path"] for item in result["files"]}
+        self.assertEqual(result["scope"], "template_only")
+        self.assertEqual(result["status"], "starter_scaffold")
+        self.assertIn("main.py", paths)
+        self.assertIn("src/app.py", paths)
+        self.assertIn("tests/test_app.py", paths)
+        self.assertIn("README.md", paths)
+        self.assertTrue(all(item["content"] for item in result["files"] if item["path"] != "src/__init__.py"))
+
+    def test_local_godot_scaffold_preserves_scene_and_script_folders(self):
+        result = generate_local_project_scaffold(
+            "Создай игру на Godot 4 с главной сценой",
+            "gdscript",
+        )
+        paths = {item["path"] for item in result["files"]}
+        self.assertIn("project.godot", paths)
+        self.assertIn("scenes/main.tscn", paths)
+        self.assertIn("scripts/main.gd", paths)
+        self.assertEqual(result["generation_engine"] if "generation_engine" in result else "swin_local_templates", "swin_local_templates")
+
+    def test_local_web_scaffold_uses_no_remote_runtime_api(self):
+        result = generate_local_project_scaffold(
+            "Создай сайт с HTML, CSS и JavaScript",
+            "html",
+        )
+        paths = {item["path"] for item in result["files"]}
+        self.assertTrue({"index.html", "styles.css", "app.js"}.issubset(paths))
+        html = next(item["content"] for item in result["files"] if item["path"] == "index.html")
+        self.assertNotIn("https://", html)
+        self.assertIn("template_only", result["scope"])
+
+    def test_local_scaffold_rejects_too_small_file_limit(self):
+        with self.assertRaisesRegex(ProjectBundleError, "нужно не менее"):
+            generate_local_project_scaffold(
+                "Создай программу на Python",
+                "python",
+                max_files=2,
+            )
+
     def test_project_prompt_contains_safety_rules_and_context(self):
         prompt = build_project_prompt(
             "Сделай приложение", "python", "ru", "Используй SQLite"
