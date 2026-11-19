@@ -813,7 +813,7 @@ def run_code_assist(
     tokenizer = getattr(transformer_model, "tokenizer", None)
     local_block_size = int(getattr(transformer_model, "block_size", 256))
     use_remote_generator = text_generator is not None
-    block_size = 40000 if use_remote_generator else local_block_size
+    block_size = 28000 if use_remote_generator else local_block_size
     prompt = _make_prompt(
         normalized_task,
         language,
