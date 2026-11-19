@@ -9,7 +9,7 @@ SWIN uses two independent model roles:
 
 The model IDs are configurable; no model weights are bundled into the Android APK or the lightweight FastAPI service.
 
-The selected Hugging Face cards identify both defaults as Apache-2.0: Qwen3-4B-Thinking-2507 is a 4B reasoning model, while Qwen2.5-Coder-7B-Instruct has 7.61B parameters and a 32K native context (the card documents YaRN extension for longer contexts).
+The selected Hugging Face model cards identify both defaults as Apache-2.0: Qwen3-4B-Thinking-2507 has 4.0B parameters and a native 262,144-token context; Qwen2.5-Coder-7B-Instruct has 7.61B parameters and a 131,072-token context.
 
 ## Runtime architecture
 
@@ -68,7 +68,7 @@ When a role-specific URL and the shared `SWIN_LLM_BASE_URL` are all empty, SWIN 
 
 ## Easiest setup: Hugging Face Inference Providers
 
-The model pages currently list inference providers for both selected models: Qwen3-4B-Thinking-2507 and Qwen2.5-Coder-7B-Instruct. Hugging Face exposes an OpenAI-compatible router, so SWIN can use one URL and one token while still sending the selected model ID for each role.
+The model pages currently list Nscale as an Inference Provider for both selected models: Qwen3-4B-Thinking-2507 and Qwen2.5-Coder-7B-Instruct. Hugging Face exposes an OpenAI-compatible router, so SWIN can use one URL and one token while still sending the selected model ID for each role. Provider availability and price may change; check the model pages and pricing before enabling paid inference.
 
 In the Render API service environment, set:
 
