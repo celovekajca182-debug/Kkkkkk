@@ -50,6 +50,15 @@ def main() -> None:
         "output": str(output),
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
+    # FineWiki's streaming HTTP reader can leave a background transfer thread
+    # alive after the capped sample is complete. Some HF/datasets combinations
+    # crash during interpreter teardown (after the output file is safely closed).
+    # Flush the report and exit only after all output integrity checks succeeded.
+    import sys
+    sys.stdout.flush()
+    sys.stderr.flush()
+    import os
+    os._exit(0)
 
 
 if __name__ == "__main__":
