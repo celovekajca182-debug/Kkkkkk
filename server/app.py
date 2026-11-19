@@ -37,7 +37,7 @@ from postgres_stores import (
 )
 from knowledge import KnowledgeBase
 from local_agent import build_evidence_ledger, capability_report, execute_local_plan, plan_task, register_local_tool
-from project_agent import ProjectBundleError, generate_local_project_scaffold
+from project_agent import ProjectBundleError, generate_local_project_scaffold, validate_project_manifest
 from model import TinyCharRNN
 
 app = FastAPI(title="SWIN AI", version="0.6.0")
@@ -172,21 +172,8 @@ register_local_tool(
 )
 register_local_tool(
     "project.validate_manifest",
-    lambda context: {
-        "file_count": len(context.get("files", [])),
-        "files": [
-            {
-                "path": item.get("path", ""),
-                "status": item.get("validation", {}).get("status", "not_run"),
-                "language": item.get("language", "other"),
-            }
-            for item in context.get("files", [])
-            if isinstance(item, dict)
-        ],
-        "scope": context.get("scope", "unknown"),
-        "runtime": "not_run",
-    },
-)
+    lambda context: validate_project_manifest(context.get("files", [])),
+
 print(
     "SWIN knowledge index loaded: "
     f"curated={len(knowledge.entries)}, "
