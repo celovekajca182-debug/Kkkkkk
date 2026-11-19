@@ -26,7 +26,22 @@ SWIN FastAPI (Render / CPU)
 OpenAI-compatible inference endpoint (GPU/provider)
 ```
 
-Each inference endpoint must implement `POST /v1/chat/completions`. vLLM and SGLang document this interface for the two selected model families. Recommended: run Qwen3 and Qwen2.5-Coder as separate GPU deployments and set a separate URL/key for each role. A shared gateway is also supported.
+Each inference endpoint must implement `POST /v1/chat/completions`.
+Example vLLM commands (run on separate GPU hosts or expose through a router):
+
+```bash
+# Chat / deep reasoning endpoint
+vllm serve Qwen/Qwen3-4B-Thinking-2507 \
+  --host 0.0.0.0 --port 8000 \
+  --enable-reasoning --reasoning-parser deepseek_r1
+
+# Coding endpoint (separate host)
+vllm serve Qwen/Qwen2.5-Coder-7B-Instruct \
+  --host 0.0.0.0 --port 8000
+```
+
+Set `SWIN_CHAT_BASE_URL=https://CHAT-HOST/v1` and `SWIN_CODE_BASE_URL=https://CODE-HOST/v1` on the FastAPI service. The API key variables are optional if your inference hosts do not require bearer authentication.
+ vLLM and SGLang document this interface for the two selected model families. Recommended: run Qwen3 and Qwen2.5-Coder as separate GPU deployments and set a separate URL/key for each role. A shared gateway is also supported.
 For the Qwen3 Thinking endpoint, enable the reasoning parser (vLLM: `--enable-reasoning --reasoning-parser deepseek_r1`; SGLang: `--reasoning-parser deepseek-r1`) so internal reasoning is separated from the user-visible answer.
 
 ## Environment variables
