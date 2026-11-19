@@ -29,6 +29,29 @@ class KnowledgeBaseTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("UTF-8", result["answer"])
 
+    def test_finewiki_articles_are_indexed_for_rag(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "knowledge.json").write_text("[]", encoding="utf-8")
+            (root / "finewiki_ru_train.txt").write_text(
+                "Биология\nБиология изучает живые организмы, клетки, наследственность и эволюцию. "
+                "Она исследует разнообразие жизни на Земле.\n\n"
+                "<|document|>\n"
+                "Клетка\nКлетка является структурной и функциональной единицей живых организмов. "
+                "Мембрана регулирует обмен веществ между клеткой и средой.\n",
+                encoding="utf-8",
+            )
+            base = KnowledgeBase(root / "knowledge.json")
+            result = base.search_many("Что такое клетка и как работает мембрана?", limit=2)
+            self.assertTrue(result)
+            self.assertEqual(result[0]["title"], "Клетка")
+            self.assertIn("мембрана", result[0]["snippet"].lower())
+            self.assertIn("ru.wikipedia.org/wiki", result[0]["url"])
+            self.assertIn("CC BY-SA 4.0", result[0]["source_type"])
+            self.assertEqual(base.wiki_articles, 2)
+
     def test_knowledge_base_is_populated(self):
         self.assertGreaterEqual(self.base.size, 10)
 
