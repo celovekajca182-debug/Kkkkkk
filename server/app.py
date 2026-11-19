@@ -517,8 +517,13 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             generation_valid = bool(generated_answer) and not looks_like_garbage(generated_answer)
             if generation_valid:
                 answer = generated_answer
-                response_mode = "byte_transformer"
-                response_source = "собственные веса SWIN Transformer"
+                tokenizer = getattr(transformer_model, "tokenizer", None)
+                if getattr(tokenizer, "vocabulary", None) is not None:
+                    response_mode = "unicode_char_transformer"
+                    response_source = "собственные веса SWIN Transformer (Unicode)"
+                else:
+                    response_mode = "byte_transformer"
+                    response_source = "собственные веса SWIN Transformer (UTF-8 bytes)"
             else:
                 answer = (
                     "Я пока не могу надёжно ответить на этот вопрос: моя текущая модель "
@@ -538,12 +543,21 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                 "generation_ms": round(elapsed * 1000, 1),
             }
             if generation_valid:
+                tokenizer = getattr(transformer_model, "tokenizer", None)
                 try:
-                    from transformer import ByteTokenizer
-                    generated_bytes = len(ByteTokenizer.encode(generated_answer))
+                    generated_tokens = (
+                        len(tokenizer.encode(generated_answer))
+                        if tokenizer is not None
+                        else len(generated_answer.encode("utf-8"))
+                    )
                 except Exception:
-                    generated_bytes = len(generated_answer.encode("utf-8"))
-                response["generation_bytes_per_second"] = round(generated_bytes / elapsed, 1)
+                    generated_tokens = len(generated_answer.encode("utf-8"))
+                response["generation_tokens_per_second"] = round(generated_tokens / elapsed, 1)
+                response["tokenizer"] = (
+                    "unicode_char"
+                    if getattr(tokenizer, "vocabulary", None) is not None
+                    else "utf8_bytes"
+                )
             return response
         except Exception as error:
             print(f"Transformer generation error: {error}")
