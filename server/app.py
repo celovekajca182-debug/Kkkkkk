@@ -173,6 +173,7 @@ register_local_tool(
 register_local_tool(
     "project.validate_manifest",
     lambda context: validate_project_manifest(context.get("files", [])),
+)
 
 print(
     "SWIN knowledge index loaded: "
