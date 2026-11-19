@@ -1,8 +1,11 @@
 import unittest
+import types
+from unittest.mock import patch
 
 from prepare_corpus import (
     clean_text,
     extract_oasst_pairs,
+    load_finewiki_documents,
     labels_have_rejection,
     russian_letter_ratio,
     split_items,
@@ -77,6 +80,37 @@ class CorpusPreparationTests(unittest.TestCase):
         self.assertEqual(len(pairs), 1)
         self.assertIn("Godot", pairs[0]["question"])
         self.assertIn("CharacterBody2D", pairs[0]["answer"])
+
+    def test_finewiki_stream_keeps_russian_articles_and_splits_validation(self):
+        class FakeStream(list):
+            def shuffle(self, seed, buffer_size):
+                return self
+
+        rows = [
+            {
+                "title": f"Статья {index}",
+                "text": ("Это подробная русская энциклопедическая статья о науке, истории и природе. " * 3),
+                "url": f"https://ru.wikipedia.org/wiki/Статья_{index}",
+            }
+            for index in range(20)
+        ]
+        fake_datasets = types.SimpleNamespace(
+            load_dataset=lambda *args, **kwargs: FakeStream(rows)
+        )
+        with patch.dict("sys.modules", {"datasets": fake_datasets}):
+            train, validation, total_chars = load_finewiki_documents(
+                max_documents=10,
+                max_chars=10000,
+                max_doc_chars=1000,
+                min_doc_chars=30,
+                validation_fraction=0.2,
+                seed=17,
+            )
+        self.assertTrue(train)
+        self.assertTrue(validation)
+        self.assertLessEqual(len(train) + len(validation), 10)
+        self.assertGreater(total_chars, 0)
+        self.assertIn("Статья", train[0])
 
     def test_split_is_reproducible_and_nonempty(self):
         items = list(range(20))
