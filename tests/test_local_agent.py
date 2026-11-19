@@ -60,7 +60,8 @@ class LocalAgentTests(unittest.TestCase):
         self.assertFalse(capabilities["provider_dependency"])
         self.assertFalse(capabilities["external_model_api"])
         self.assertFalse(capabilities["vision"]["enabled"])
-        self.assertFalse(capabilities["multi_file_project_generation"])
+        self.assertTrue(capabilities["multi_file_project_scaffolding"])
+        self.assertFalse(capabilities["multi_file_llm_generation"])
 
 
 if __name__ == "__main__":
