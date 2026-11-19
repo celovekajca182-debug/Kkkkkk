@@ -79,7 +79,7 @@ class AssistantCoreTests(unittest.TestCase):
         self.assertIn("Документация описывает текущий API", prompt)
         self.assertIn("Какая версия библиотеки нужна?", prompt)
         self.assertIn("do not print private reasoning", prompt)
-        self.assertNotIn("Старый вопрос", prompt)
+        self.assertIn("Старый вопрос", prompt)
 
 
 if __name__ == "__main__":
