@@ -9,10 +9,10 @@ import torch
 from transformer import CharTokenizer, SWINTransformer, load_transformer, save_transformer
 
 
-def read_instruction_file(path: Path) -> list[str]:
+def read_instruction_pairs(path: Path) -> list[tuple[str, str]]:
     if not path.is_file():
         return []
-    records = []
+    records: list[tuple[str, str]] = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         if not line.strip():
             continue
@@ -23,8 +23,53 @@ def read_instruction_file(path: Path) -> list[str]:
         question = str(item.get("question", "")).strip()
         answer = str(item.get("answer", "")).strip()
         if question and answer:
-            records.append(f"Пользователь: {question}\nSWIN: {answer}")
+            records.append((question, answer))
     return records
+
+
+def read_instruction_file(path: Path) -> list[str]:
+    return [
+        f"Пользователь: {question}\nSWIN: {answer}"
+        for question, answer in read_instruction_pairs(path)
+    ]
+
+
+def build_instruction_examples(
+    knowledge_path: Path,
+    dialogue_path: Path,
+    instructions_path: Path,
+    coding_path: Path | None = None,
+    project_examples_path: Path | None = None,
+) -> list[tuple[str, str]]:
+    """Return prompt/answer pairs so SFT can mask the user prompt loss."""
+    examples: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(prompt: str, answer: str):
+        prompt = prompt.strip()
+        answer = answer.strip()
+        key = (prompt.casefold(), answer.casefold())
+        if prompt and answer and key not in seen:
+            seen.add(key)
+            examples.append((prompt, answer))
+
+    if knowledge_path.is_file():
+        entries = json.loads(knowledge_path.read_text(encoding="utf-8"))
+        for item in entries:
+            question = str(item.get("question", "")).strip()
+            answer = str(item.get("answer", "")).strip()
+            title = str(item.get("title", "")).strip()
+            if question and answer:
+                prefix = f"Тема: {title}\n" if title else ""
+                add(prefix + f"Пользователь: {question}", answer)
+
+    for path in (dialogue_path, instructions_path, coding_path, project_examples_path):
+        if path is None:
+            continue
+        for question, answer in read_instruction_pairs(path):
+            add(f"Пользователь: {question}", answer)
+
+    return examples
 
 
 def join_corpus(*pieces: str) -> str:
@@ -63,21 +108,103 @@ def build_instruction_corpus(
         "Ты — SWIN AI, самостоятельный русскоязычный помощник по программированию, разработке игр и техническим вопросам.",
         "Отвечай прямо, спокойно и по существу. Не выдумывай факты. Если данных недостаточно, честно обозначь это и предложи проверяемый следующий шаг.",
     ]
-    if knowledge_path.is_file():
-        entries = json.loads(knowledge_path.read_text(encoding="utf-8"))
-        for item in entries:
-            question = str(item.get("question", "")).strip()
-            answer = str(item.get("answer", "")).strip()
-            title = str(item.get("title", "")).strip()
-            if question and answer:
-                pieces.append(f"Тема: {title}\nПользователь: {question}\nSWIN: {answer}")
-    pieces.extend(read_instruction_file(dialogue_path))
-    pieces.extend(read_instruction_file(instructions_path))
-    if coding_path is not None:
-        pieces.extend(read_instruction_file(coding_path))
-    if project_examples_path is not None:
-        pieces.extend(read_instruction_file(project_examples_path))
+    for prompt, answer in build_instruction_examples(
+        knowledge_path,
+        dialogue_path,
+        instructions_path,
+        coding_path,
+        project_examples_path,
+    ):
+        pieces.append(f"{prompt}\nSWIN: {answer}")
     return join_corpus(*pieces)
+
+
+def build_sft_windows(
+    examples: list[tuple[str, str]],
+    tokenizer: CharTokenizer,
+    block_size: int,
+    prompt_budget: int | None = None,
+) -> list[tuple[torch.Tensor, torch.Tensor]]:
+    """Build fixed-size response-only SFT windows with user prompt loss masked.
+
+    Target positions corresponding to the prompt are set to -100 (PyTorch's
+    cross-entropy ignore index). Long prompts are compacted and long answers are
+    covered by overlapping windows so every answer section receives supervision.
+    """
+    if block_size < 32:
+        raise ValueError("Для SFT block_size должен быть не меньше 32.")
+    prompt_budget = prompt_budget or max(64, block_size // 2)
+    prompt_budget = min(prompt_budget, block_size - 8)
+    pad_id = tokenizer.stoi.get(" ", 0)
+    windows: list[tuple[torch.Tensor, torch.Tensor]] = []
+    stride = max(16, block_size // 2)
+
+    for prompt, answer in examples:
+        prompt = prompt.strip() + "\nSWIN:"
+        answer = answer.strip()
+        if not prompt or not answer:
+            continue
+
+        prompt_ids = tokenizer.encode(prompt)
+        if len(prompt_ids) > prompt_budget:
+            # Preserve the role/task opening and the most recent question context.
+            head_size = min(24, prompt_budget // 4)
+            tail_size = prompt_budget - head_size
+            prompt_ids = prompt_ids[:head_size] + prompt_ids[-tail_size:]
+
+        answer_ids = tokenizer.encode(answer)
+        if not answer_ids:
+            continue
+        sequence = prompt_ids + answer_ids + tokenizer.encode("\n\n")
+        prompt_end = len(prompt_ids)
+        answer_end = prompt_end + len(answer_ids)
+
+        start = 0
+        while start < answer_end:
+            chunk = sequence[start:start + block_size + 1]
+            if len(chunk) < 2:
+                break
+
+            input_ids = chunk[:-1]
+            target_ids = chunk[1:]
+            targets = []
+            for offset, token_id in enumerate(target_ids):
+                absolute_target_position = start + offset + 1
+                if absolute_target_position < prompt_end:
+                    targets.append(-100)
+                else:
+                    targets.append(token_id)
+
+            if any(token_id != -100 for token_id in targets):
+                input_padded = input_ids + [pad_id] * (block_size - len(input_ids))
+                target_padded = targets + [-100] * (block_size - len(targets))
+                windows.append((
+                    torch.tensor(input_padded, dtype=torch.long),
+                    torch.tensor(target_padded, dtype=torch.long),
+                ))
+
+            if start + block_size + 1 >= len(sequence):
+                break
+            start += stride
+
+    if not windows:
+        raise ValueError("Не удалось построить SFT-окна с токенами ответа.")
+    return windows
+
+
+def sample_sft_batch(
+    windows: list[tuple[torch.Tensor, torch.Tensor]],
+    batch_size: int,
+    device: torch.device,
+):
+    if not windows:
+        raise ValueError("SFT dataset не содержит обучающих окон.")
+    choices = torch.randint(0, len(windows), (batch_size,)).tolist()
+    x = torch.stack([windows[index][0] for index in choices])
+    y = torch.stack([windows[index][1] for index in choices])
+    if not torch.any(y != -100):
+        raise ValueError("SFT batch не содержит ни одного target токена.")
+    return x.to(device), y.to(device)
 
 
 def build_tensor_splits(
@@ -120,13 +247,29 @@ def sample_batch(data: torch.Tensor, batch_size: int, block_size: int, device: t
 
 
 @torch.no_grad()
-def estimate_loss(model, train_data, val_data, batch_size, block_size, device, steps=8):
+def estimate_loss(
+    model,
+    train_data,
+    val_data,
+    batch_size,
+    block_size,
+    device,
+    steps=8,
+    train_windows=None,
+    val_windows=None,
+):
     model.eval()
     result = {}
-    for name, data in (("train", train_data), ("validation", val_data)):
+    for name, data, windows in (
+        ("train", train_data, train_windows),
+        ("validation", val_data, val_windows),
+    ):
         losses = []
         for _ in range(steps):
-            x, y = sample_batch(data, batch_size, block_size, device)
+            if windows is not None:
+                x, y = sample_sft_batch(windows, batch_size, device)
+            else:
+                x, y = sample_batch(data, batch_size, block_size, device)
             _, loss = model(x, y)
             losses.append(float(loss.item()))
         result[name] = sum(losses) / len(losses)
@@ -144,13 +287,27 @@ def train_stage(
     device,
     output_path: Path,
     stage_name: str,
+    train_windows=None,
+    val_windows=None,
 ):
     model = model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=0.01)
+    training_size = len(train_windows) if train_windows is not None else len(train_data)
+    units_per_batch = batch_size if train_windows is not None else batch_size * block_size
     batches_per_epoch = max(
         10,
-        min(80, math.ceil(len(train_data) / (batch_size * block_size)) * 2),
+        min(80, math.ceil(training_size / units_per_batch) * 2),
     )
+    total_steps = max(1, epochs * batches_per_epoch)
+    warmup_steps = max(1, int(total_steps * 0.05))
+
+    def lr_multiplier(step: int) -> float:
+        if step < warmup_steps:
+            return max(0.1, (step + 1) / warmup_steps)
+        progress = min(1.0, (step - warmup_steps) / max(1, total_steps - warmup_steps))
+        return 0.1 + 0.9 * 0.5 * (1.0 + math.cos(math.pi * progress))
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_multiplier)
     best_validation = float("inf")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -158,21 +315,33 @@ def train_stage(
         model.train()
         total_loss = 0.0
         for _ in range(batches_per_epoch):
-            x, y = sample_batch(train_data, batch_size, block_size, device)
+            if train_windows is not None:
+                x, y = sample_sft_batch(train_windows, batch_size, device)
+            else:
+                x, y = sample_batch(train_data, batch_size, block_size, device)
             _, loss = model(x, y)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
+            scheduler.step()
             total_loss += float(loss.item())
 
         metrics = estimate_loss(
-            model, train_data, val_data, batch_size, block_size, device
+            model,
+            train_data,
+            val_data,
+            batch_size,
+            block_size,
+            device,
+            train_windows=train_windows,
+            val_windows=val_windows,
         )
         print(
             f"{stage_name} epoch {epoch}/{epochs} "
             f"train_loss={total_loss / batches_per_epoch:.4f} "
-            f"validation_loss={metrics['validation']:.4f}"
+            f"validation_loss={metrics['validation']:.4f} "
+            f"lr={scheduler.get_last_lr()[0]:.2e}"
         )
 
         if metrics["validation"] < best_validation:
@@ -236,6 +405,17 @@ def main():
         if validation_path.is_file():
             validation_parts.append(validation_path.read_text(encoding="utf-8"))
     pretrain_validation = join_corpus(*validation_parts)
+    sft_examples = build_instruction_examples(
+        Path(args.knowledge),
+        Path(args.dialogue),
+        Path(args.instructions_train),
+        Path(args.coding_train),
+        Path(args.project_examples),
+    )
+    sft_validation_examples = (
+        read_instruction_pairs(Path(args.instructions_validation))
+        + read_instruction_pairs(Path(args.coding_validation))
+    )
     sft_train = build_instruction_corpus(
         Path(args.knowledge),
         Path(args.dialogue),
@@ -244,8 +424,10 @@ def main():
         Path(args.project_examples),
     )
     sft_validation = join_corpus(
-        *read_instruction_file(Path(args.instructions_validation)),
-        *read_instruction_file(Path(args.coding_validation)),
+        *[
+            f"Пользователь: {question}\nSWIN: {answer}"
+            for question, answer in sft_validation_examples
+        ]
     )
 
     tokenizer = CharTokenizer.from_texts(
@@ -288,9 +470,17 @@ def main():
     sft_train_data, sft_val_data = build_tensor_splits(
         sft_train, sft_validation, args.block_size, tokenizer
     )
+    sft_train_windows = build_sft_windows(sft_examples, tokenizer, args.block_size)
+    sft_validation_windows = build_sft_windows(
+        sft_validation_examples,
+        tokenizer,
+        args.block_size,
+    )
     print(
-        f"Этап 2 / instruction tuning: train={sft_train_data.numel():,} символов, "
-        f"validation={sft_val_data.numel():,} символов"
+        f"Этап 2 / instruction tuning: examples={len(sft_examples):,}, "
+        f"train_windows={len(sft_train_windows):,}, "
+        f"validation_windows={len(sft_validation_windows):,}; "
+        "user-prompt loss masked"
     )
     model = train_stage(
         model,
@@ -302,6 +492,8 @@ def main():
         device,
         Path(args.output),
         "INSTRUCTION",
+        train_windows=sft_train_windows,
+        val_windows=sft_validation_windows,
     )
 
     model = model.to("cpu").eval()
