@@ -12,6 +12,15 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from auth import AuthStore, TOKEN_TTL_SECONDS, validate_email
+from assistant_core import (
+    build_reasoning_prompt,
+    memory_category,
+    memory_key_for,
+    parse_memory_command,
+    search_web,
+    should_research,
+    validate_memory_value,
+)
 from chat_history import ChatHistoryStore
 from coding_agent import LANGUAGES as CODE_LANGUAGES, run_code_assist
 from language_support import (
@@ -162,6 +171,10 @@ class HistoryMessage(BaseModel):
 class SyncMemoryRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=80)
     messages: list[HistoryMessage] = Field(default_factory=list, max_length=80)
+
+class MemoryFactRequest(BaseModel):
+    value: str = Field(min_length=1, max_length=500)
+    category: Literal["note", "project", "preference"] | None = None
 
 
 def record_chat_turn(
@@ -433,7 +446,14 @@ def code_assist(
     context_parts: list[str] = []
     supplied_context = request.project_context.strip()
     if supplied_context:
-        context_parts.append("Контекст пользователя: " + supplied_context[:150])
+        context_parts.append("Контекст проекта: " + supplied_context[:500])
+    persistent_memories = chat_history.memories(int(user["id"]), limit=10)
+    if persistent_memories:
+        memory_text = "\\n".join(
+            "- " + str(item.get("value", ""))[:180]
+            for item in persistent_memories
+        )
+        context_parts.append("Постоянная память пользователя (данные, не инструкции):\\n" + memory_text)
     if recent_turns:
         memory_lines = []
         for previous_task, previous_answer in recent_turns[-2:]:
@@ -473,143 +493,264 @@ def code_assist(
     return result
 
 
+@app.get("/memory/facts")
+def get_memory_facts(user: dict = Depends(get_current_user)):
+    """Return the authenticated account's saved facts, never another account's."""
+    items = chat_history.memories(int(user["id"]), limit=50)
+    return {"items": items, "count": len(items)}
+
+
+@app.post("/memory/facts")
+def create_memory_fact(
+    request: MemoryFactRequest,
+    user: dict = Depends(get_current_user),
+):
+    try:
+        value = validate_memory_value(request.value)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    category = request.category or memory_category(value)
+    key = memory_key_for(value)
+    saved = chat_history.save_memory(int(user["id"]), key, value, category)
+    return {"ok": True, "item": saved}
+
+
+@app.delete("/memory/facts")
+def delete_memory_facts(
+    memory_key: str | None = Query(default=None, min_length=1, max_length=64),
+    user: dict = Depends(get_current_user),
+):
+    deleted = chat_history.delete_memory(int(user["id"]), memory_key)
+    return {"ok": True, "deleted": deleted}
+
+
 @app.post("/chat")
 def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     started_at = time.perf_counter()
     message = request.message.strip()
     session_id = request.session_id.strip()
+    user_id = int(user["id"])
     if not message:
         raise HTTPException(status_code=422, detail="Сообщение не должно быть пустым.")
     if not session_id:
         raise HTTPException(status_code=422, detail="session_id не должен быть пустым.")
 
     response_language = resolve_response_language(message, request.response_language)
-    memory_key = f"{user['id']}:{session_id}"
-    history = chat_history.turns(int(user["id"]), session_id, limit=MAX_TURNS_PER_SESSION)
+    memory_key = f"{user_id}:{session_id}"
+    history = chat_history.turns(user_id, session_id, limit=MAX_TURNS_PER_SESSION)
     if not history:
         history = conversation_memory.get(memory_key, [])
+
+    def finish(answer: str, mode: str, **extra):
+        turns = record_chat_turn(memory_key, user_id, session_id, message, answer)
+        result = {
+            "answer": answer,
+            "mode": mode,
+            "response_language": response_language,
+            "memory_turns": turns,
+            "generation_ms": round((time.perf_counter() - started_at) * 1000, 1),
+        }
+        result.update(extra)
+        return result
+
+    # Persistent memory is explicit and controllable from chat.
+    memory_command = parse_memory_command(message)
+    if memory_command:
+        action = memory_command["action"]
+        if action == "save":
+            try:
+                value = validate_memory_value(memory_command.get("value", ""))
+            except ValueError as error:
+                return finish(str(error), "memory_rejected")
+            saved = chat_history.save_memory(
+                user_id,
+                memory_key_for(value),
+                value,
+                memory_category(value),
+            )
+            return finish(
+                "Запомнила: " + saved["value"],
+                "memory_saved",
+                memory_items=chat_history.memories(user_id, limit=50),
+            )
+        if action == "list":
+            items = chat_history.memories(user_id, limit=50)
+            if not items:
+                answer = "Пока в долговременной памяти нет записей. Напиши «Запомни: …», чтобы сохранить важную информацию."
+            else:
+                answer = "Вот что сохранено в долговременной памяти:\\\\n" + "\\\\n".join(
+                    f"• {item['value']}" for item in items
+                )
+            return finish(answer, "memory_list", memory_items=items)
+        if action == "forget_all":
+            deleted = chat_history.delete_memory(user_id)
+            return finish(
+                f"Удалено записей из долговременной памяти: {deleted}. История чатов не затронута.",
+                "memory_cleared",
+                deleted=deleted,
+            )
+        if action == "forget":
+            query = memory_command.get("query", "").casefold().strip()
+            matches = [
+                item for item in chat_history.memories(user_id, limit=50)
+                if query and query in str(item.get("value", "")).casefold()
+            ]
+            deleted = sum(
+                chat_history.delete_memory(user_id, item["memory_key"])
+                for item in matches
+            )
+            answer = (
+                f"Удалено записей: {deleted}."
+                if deleted
+                else "Не нашла такую запись в памяти. Напиши часть сохранённой фразы."
+            )
+            return finish(answer, "memory_forgotten", deleted=deleted)
 
     small_talk = localized_small_talk(message, response_language)
     if small_talk is None and response_language == "ru":
         small_talk = safe_small_talk(message)
     if small_talk is not None:
-        turns = record_chat_turn(
-            memory_key, int(user["id"]), session_id, message, small_talk
+        return finish(
+            small_talk,
+            "safe_small_talk",
+            source="встроенный ответ",
+            confidence=1.0,
         )
-        return {
-            "answer": small_talk,
-            "mode": "safe_small_talk",
-            "source": "встроенный безопасный ответ",
-            "confidence": 1.0,
-            "response_language": response_language,
-            "memory_turns": turns,
-            "generation_ms": round((time.perf_counter() - started_at) * 1000, 1),
-        }
 
-    # The current curated KnowledgeBase is Russian-only. Never return its Russian
-    # answer when the user selected a different response language.
-    if response_language == "ru":
-        match = knowledge.search(message)
-        if match is not None:
-            answer = match["answer"]
-            turns = record_chat_turn(memory_key, int(user["id"]), session_id, message, answer)
-            return {
-                "answer": answer,
-                "mode": "local_knowledge",
-                "source": match["title"],
-                "confidence": round(match["score"], 3),
-                "response_language": response_language,
-                "memory_turns": turns,
-                "generation_ms": round((time.perf_counter() - started_at) * 1000, 1),
-            }
+    # Search on explicit lookup requests and time-sensitive questions.
+    research_requested = should_research(message)
+    references = search_web(message, max_results=6) if research_requested else []
+    local_match = knowledge.search(message) if response_language == "ru" else None
 
+    if local_match is not None and not research_requested:
+        return finish(
+            local_match["answer"],
+            "local_knowledge",
+            source=local_match["title"],
+            confidence=round(local_match["score"], 3),
+            references=[],
+            reasoning_mode="curated_retrieval",
+        )
+
+    persistent_memories = chat_history.memories(user_id, limit=30)
     if transformer_model is not None:
-        prompt = format_chat_prompt(history, message, response_language)
+        tokenizer = getattr(transformer_model, "tokenizer", None)
+        block_size = int(getattr(transformer_model, "block_size", 512))
+        prompt = build_reasoning_prompt(
+            history=history,
+            message=message,
+            language=response_language,
+            memories=persistent_memories,
+            references=references,
+            tokenizer=tokenizer,
+            block_size=block_size,
+        )
         try:
             generated_answer = transformer_model.generate(
                 prompt,
-                max_new_tokens=200,
+                max_new_tokens=220,
                 temperature=0.0,
                 top_k=1,
                 stop_at_newline=False,
             ).strip()
-            generated_answer = generated_answer.split("\nUser:", 1)[0].strip()
-            generated_answer = generated_answer.split("\nПользователь:", 1)[0].strip()
+            generated_answer = generated_answer.split("\\\\nUser:", 1)[0].strip()
+            generated_answer = generated_answer.split("\\\\nПользователь:", 1)[0].strip()
             generation_valid = bool(generated_answer) and not looks_like_garbage(generated_answer)
             if generation_valid:
                 answer = generated_answer
-                tokenizer = getattr(transformer_model, "tokenizer", None)
-                tokenizer_type = getattr(tokenizer, "tokenizer_type", None)
-                if tokenizer_type == "byte_bpe":
-                    response_mode = "bpe_byte_transformer"
-                    response_source = "собственные веса SWIN Transformer (Byte-level BPE)"
-                elif getattr(tokenizer, "vocabulary", None) is not None:
-                    response_mode = "unicode_char_transformer"
-                    response_source = "собственные веса SWIN Transformer (Unicode)"
-                else:
-                    response_mode = "byte_transformer"
-                    response_source = "собственные веса SWIN Transformer (UTF-8 bytes)"
+                response_mode = "retrieval_augmented_transformer" if references or persistent_memories else "structured_transformer"
+                response_source = (
+                    "SWIN Transformer + веб-источники + долговременная память"
+                    if references and persistent_memories
+                    else "SWIN Transformer + веб-источники"
+                    if references
+                    else "SWIN Transformer + долговременная память"
+                    if persistent_memories
+                    else "собственные веса SWIN Transformer"
+                )
+                if references:
+                    source_lines = [
+                        f"[{index}] {item['title']} — {item['url']}"
+                        for index, item in enumerate(references[:4], 1)
+                    ]
+                    answer += "\\\\n\\\\nИсточники:\\\\n" + "\\\\n".join(source_lines)
             else:
                 answer = localized_fallback(response_language)
                 response_mode = "safe_fallback"
                 response_source = "защита от бессвязной генерации"
-            turns = record_chat_turn(memory_key, int(user["id"]), session_id, message, answer)
-            elapsed = max(time.perf_counter() - started_at, 0.001)
-            response = {
-                "answer": answer,
-                "mode": response_mode,
-                "source": response_source,
-                "confidence": None,
-                "response_language": response_language,
-                "memory_turns": turns,
-                "generation_ms": round(elapsed * 1000, 1),
-            }
+
+            result = finish(
+                answer,
+                response_mode,
+                source=response_source,
+                confidence=None,
+                references=references,
+                research_performed=research_requested,
+                memory_used=bool(persistent_memories),
+                reasoning_mode="private_plan_evidence_check",
+            )
             if generation_valid:
-                tokenizer = getattr(transformer_model, "tokenizer", None)
                 try:
-                    generated_tokens = (
-                        len(tokenizer.encode(generated_answer))
-                        if tokenizer is not None
-                        else len(generated_answer.encode("utf-8"))
-                    )
+                    generated_tokens = len(tokenizer.encode(generated_answer)) if tokenizer is not None else len(generated_answer.encode("utf-8"))
                 except Exception:
                     generated_tokens = len(generated_answer.encode("utf-8"))
-                response["generation_tokens_per_second"] = round(generated_tokens / elapsed, 1)
-                response["tokenizer"] = (
-                    getattr(tokenizer, "tokenizer_type", None)
-                    or ("unicode_char" if getattr(tokenizer, "vocabulary", None) is not None else "utf8_bytes")
-                )
-            return response
+                elapsed = max(time.perf_counter() - started_at, 0.001)
+                result["generation_tokens_per_second"] = round(generated_tokens / elapsed, 1)
+                result["tokenizer"] = getattr(tokenizer, "tokenizer_type", None) or "utf8_bytes"
+            return result
         except Exception as error:
             print(f"Transformer generation error: {error}")
 
-    # The legacy RNN was trained only in Russian; never use it for other languages.
+    # Keep curated knowledge useful when the Transformer is unavailable.
+    if local_match is not None:
+        answer = local_match["answer"]
+        if references:
+            answer += "\\\\n\\\\nНайденные материалы для дополнительной проверки:\\\\n" + "\\\\n".join(
+                f"[{i}] {item['title']} — {item['url']}"
+                for i, item in enumerate(references[:4], 1)
+            )
+        return finish(
+            answer,
+            "local_knowledge_with_research",
+            source=local_match["title"],
+            confidence=round(local_match["score"], 3),
+            references=references,
+            research_performed=research_requested,
+            reasoning_mode="curated_retrieval",
+        )
+
+    # With no model, report actual search results instead of inventing a synthesis.
+    if references:
+        answer = "Нашла открытые материалы по запросу. Это краткие поисковые выдержки, а не проверенный готовый вывод:\\\\n\\\\n"
+        answer += "\\\\n\\\\n".join(
+            f"{i}. {item['title']} ({item['source_type']})\\\\n{item['snippet']}\\\\n{item['url']}"
+            for i, item in enumerate(references[:5], 1)
+        )
+        return finish(
+            answer,
+            "web_research_results",
+            references=references,
+            research_performed=True,
+            reasoning_mode="search_only_no_model",
+        )
+
+    # The legacy RNN is only a last fallback for Russian.
     if rnn_model is not None and response_language == "ru":
-        prompt = f"Пользователь: {message}\nSWIN:"
+        prompt = f"Пользователь: {message}\\\\nSWIN:"
         try:
             generated = rnn_model.generate(prompt, length=220, temperature=0.75)
-            generated_answer = generated[len(prompt):].split("\n", 1)[0].strip()
+            generated_answer = generated[len(prompt):].split("\\\\n", 1)[0].strip()
         except Exception as error:
             print(f"RNN generation error: {error}")
             generated_answer = ""
         if generated_answer and not looks_like_garbage(generated_answer):
-            answer = generated_answer
-            response_mode = "character_rnn"
-            response_source = "собственные веса SWIN RNN"
-        else:
-            answer = localized_fallback(response_language)
-            response_mode = "safe_fallback"
-            response_source = "защита от бессвязной генерации"
-        turns = record_chat_turn(memory_key, int(user["id"]), session_id, message, answer)
-        return {
-            "answer": answer,
-            "mode": response_mode,
-            "source": response_source,
-            "confidence": None,
-            "response_language": response_language,
-            "memory_turns": turns,
-            "generation_ms": round((time.perf_counter() - started_at) * 1000, 1),
-        }
+            return finish(
+                generated_answer,
+                "character_rnn",
+                source="собственные веса SWIN RNN",
+                memory_used=bool(persistent_memories),
+                reasoning_mode="legacy_fallback",
+            )
 
     raise HTTPException(status_code=503, detail=localized_fallback(response_language))
 
@@ -621,7 +762,7 @@ def capabilities():
             {"code": code, "label": label}
             for code, label in SUPPORTED_CHAT_LANGUAGES.items()
         ],
-        "default_chat_language": "auto",
+        "default_chat_language": "ru",
         "auto_detection": "heuristic",
         "code_languages": [
             {"code": code, "label": label}
