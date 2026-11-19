@@ -118,8 +118,14 @@ class MainActivity : Activity() {
             }
         }
 
-        preferences.edit().putString("session_id:$email", stableSession).apply()
-        return stableSession
+        val activeKey = "active_session_id:$normalizedEmail"
+        val activeSession = preferences.getString(activeKey, null)
+            ?.takeIf { it.isNotBlank() } ?: stableSession
+        preferences.edit()
+            .putString("session_id:$email", stableSession)
+            .putString(activeKey, activeSession)
+            .apply()
+        return activeSession
     }
 
     private fun darkRoot(): LinearLayout = LinearLayout(this).apply {
@@ -756,8 +762,169 @@ class MainActivity : Activity() {
         return row
     }
 
+    private fun showChatHistory() {
+        val token = authToken
+        if (token.isNullOrBlank()) {
+            Toast.makeText(this, "Сначала войди в аккаунт.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(16), chatDp(8), chatDp(16), chatDp(8))
+        }
+        val createButton = TextView(this).apply {
+            text = "＋  Новый чат"
+            textSize = 14f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            gravity = Gravity.CENTER
+            setTextColor(chatColor("sendText"))
+            background = chatBg(chatColor("accent"), 12)
+            setPadding(chatDp(12), 0, chatDp(12), 0)
+        }
+        content.addView(createButton, LinearLayout.LayoutParams(-1, chatDp(46)))
+        val search = makeEdit(
+            "Поиск по названию и сообщениям",
+            InputType.TYPE_CLASS_TEXT
+        ).apply {
+            background = chatBg(chatColor("panel"), 12, chatColor("stroke"))
+            setTextColor(chatColor("ink"))
+            setHintTextColor(chatColor("muted"))
+            setPadding(chatDp(12), chatDp(7), chatDp(12), chatDp(7))
+            textSize = 14f
+        }
+        content.addView(search, LinearLayout.LayoutParams(-1, chatDp(48)).apply {
+            topMargin = chatDp(10)
+        })
+        val status = makeText("Загружаю историю…", 12f, chatColor("muted"))
+        content.addView(status, LinearLayout.LayoutParams(-1, chatDp(30)).apply {
+            topMargin = chatDp(5)
+        })
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(list, ViewGroup.LayoutParams(-1, -2))
+        }
+        content.addView(scroll, LinearLayout.LayoutParams(-1, chatDp(330)))
+
+        val dialog = dialogBuilder()
+            .setTitle("История чатов")
+            .setView(content)
+            .setNegativeButton("Закрыть", null)
+            .create()
+        createButton.setOnClickListener {
+            dialog.dismiss()
+            createNewChat()
+        }
+        dialog.show()
+
+        var sessions = JSONArray()
+        fun renderSessions(rawQuery: String) {
+            val query = rawQuery.trim().lowercase()
+            list.removeAllViews()
+            val matches = (0 until sessions.length()).mapNotNull { index ->
+                sessions.optJSONObject(index)
+            }.filter { item ->
+                query.isBlank() ||
+                    item.optString("title").lowercase().contains(query) ||
+                    item.optString("preview").lowercase().contains(query)
+            }
+            status.text = when {
+                sessions.length() == 0 -> "Сохранённых диалогов пока нет."
+                matches.isEmpty() -> "Ничего не найдено."
+                else -> "Диалогов: ${matches.size}"
+            }
+            for (item in matches) {
+                val targetId = item.optString("session_id", "")
+                if (targetId.isBlank()) continue
+                val title = item.optString("title", "Новый чат")
+                    .replace(Regex("\\s+"), " ").trim()
+                val preview = item.optString("preview", "")
+                    .replace(Regex("\\s+"), " ").trim()
+                val timestamp = item.optLong("updated_at", 0L)
+                val date = if (timestamp > 0L) {
+                    java.text.SimpleDateFormat("dd.MM · HH:mm", java.util.Locale.getDefault())
+                        .format(java.util.Date(timestamp * 1000L))
+                } else {
+                    "Недавно"
+                }
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(chatDp(13), chatDp(10), chatDp(13), chatDp(10))
+                    background = chatBg(
+                        chatColor("panel"), 13,
+                        if (targetId == sessionId) chatColor("accent") else chatColor("stroke")
+                    )
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        dialog.dismiss()
+                        openChatSession(targetId)
+                    }
+                }
+                row.addView(makeText(
+                    title.ifBlank { "Новый чат" },
+                    14f,
+                    chatColor("ink")
+                ).apply {
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    maxLines = 1
+                })
+                row.addView(makeText(
+                    preview.ifBlank { "Нет сообщений" },
+                    12f,
+                    chatColor("muted")
+                ).apply {
+                    maxLines = 2
+                    setPadding(0, chatDp(3), 0, chatDp(5))
+                })
+                val meta = makeText(
+                    "$date  ·  ${item.optInt("message_count", 0)} сообщений",
+                    10f,
+                    chatColor("accent")
+                )
+                row.addView(meta)
+                list.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+                    bottomMargin = chatDp(8)
+                })
+            }
+        }
+
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                renderSessions(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
+        })
+
+        thread {
+            try {
+                val response = requestJson(
+                    "/memory/sessions?limit=100",
+                    JSONObject(),
+                    token,
+                    method = "GET"
+                )
+                val loaded = response.optJSONArray("items") ?: JSONArray()
+                runOnUiThread {
+                    sessions = loaded
+                    renderSessions(search.text.toString())
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    status.text = "Не удалось загрузить историю: ${error.message ?: "проверь соединение"}"
+                }
+            }
+        }
+    }
+
     private fun showChatSettings() {
         val options = arrayOf(
+            "История чатов",
+            "Новый чат",
             "Память SWIN",
             "Язык ответа",
             "Оформление",
@@ -769,12 +936,14 @@ class MainActivity : Activity() {
             .setTitle("Настройки")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> showMemorySettings()
-                    1 -> showResponseLanguageSettings()
-                    2 -> showThemeSettings()
-                    3 -> showEndpointSettings()
-                    4 -> confirmClearChatMemory()
-                    5 -> logout()
+                    0 -> showChatHistory()
+                    1 -> createNewChat()
+                    2 -> showMemorySettings()
+                    3 -> showResponseLanguageSettings()
+                    4 -> showThemeSettings()
+                    5 -> showEndpointSettings()
+                    6 -> confirmClearChatMemory()
+                    7 -> logout()
                 }
             }
             .setNegativeButton("Закрыть", null)
@@ -1336,6 +1505,10 @@ class MainActivity : Activity() {
         })
         brandCopy.addView(makeText("Личный помощник · Русский", 10f, muted))
         brand.addView(brandCopy)
+        brand.isClickable = true
+        brand.isFocusable = true
+        brand.contentDescription = "Открыть историю чатов"
+        brand.setOnClickListener { showChatHistory() }
         header.addView(brand, LinearLayout.LayoutParams(0, chatDp(52), 1f))
         val codeMode = TextView(this).apply {
             text = if (isCodeMode) "Код ✓" else "Код"
@@ -1507,15 +1680,17 @@ class MainActivity : Activity() {
             setOnClickListener {
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle("Дополнительные действия")
-                    .setItems(arrayOf("Режим программирования", "Память SWIN", "Язык ответа")) { _, which ->
+                    .setItems(arrayOf("История чатов", "Новый чат", "Режим программирования", "Память SWIN", "Язык ответа")) { _, which ->
                         when (which) {
-                            0 -> {
+                            0 -> showChatHistory()
+                            1 -> createNewChat()
+                            2 -> {
                                 isCodeMode = !isCodeMode
                                 updateCodingControls()
                                 codeMode.text = if (isCodeMode) "Код ✓" else "Код"
                             }
-                            1 -> showMemorySettings()
-                            2 -> showResponseLanguageSettings()
+                            3 -> showMemorySettings()
+                            4 -> showResponseLanguageSettings()
                         }
                     }
                     .show()
@@ -1552,10 +1727,14 @@ class MainActivity : Activity() {
         loadChatHistory()
     }
 
-    private fun localHistoryKey(): String = "chat_backup:$userEmail:$sessionId"
+    private fun activeSessionPreferenceKey(): String =
+        "active_session_id:${userEmail.trim().lowercase()}"
 
-    private fun readLocalHistory(): JSONArray {
-        val raw = getPreferences(MODE_PRIVATE).getString(localHistoryKey(), "[]") ?: "[]"
+    private fun localHistoryKey(forSessionId: String = sessionId): String =
+        "chat_backup:$userEmail:$forSessionId"
+
+    private fun readLocalHistory(forSessionId: String = sessionId): JSONArray {
+        val raw = getPreferences(MODE_PRIVATE).getString(localHistoryKey(forSessionId), "[]") ?: "[]"
         return try {
             JSONArray(raw)
         } catch (_: Exception) {
@@ -1563,28 +1742,60 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun cacheLocalMessage(role: String, content: String) {
-        if (userEmail.isBlank() || sessionId.isBlank() || content.isBlank()) return
+    private fun cacheLocalMessage(
+        role: String,
+        content: String,
+        forSessionId: String = sessionId
+    ) {
+        if (userEmail.isBlank() || forSessionId.isBlank() || content.isBlank()) return
         val preferences = getPreferences(MODE_PRIVATE)
-        val history = readLocalHistory()
+        val history = readLocalHistory(forSessionId)
         history.put(
             JSONObject()
                 .put("role", role)
                 .put("content", content.take(12000))
         )
         while (history.length() > 60) history.remove(0)
-        preferences.edit().putString(localHistoryKey(), history.toString()).apply()
+        preferences.edit().putString(localHistoryKey(forSessionId), history.toString()).apply()
+    }
+
+    private fun createNewChat() {
+        val newSession = "chat-${java.util.UUID.randomUUID()}"
+        sessionId = newSession
+        getPreferences(MODE_PRIVATE).edit()
+            .putString(activeSessionPreferenceKey(), newSession)
+            .apply()
+        if (::chatMessages.isInitialized) {
+            chatMessages.removeAllViews()
+            welcomePanel = null
+            showWelcomePanel()
+        }
+        if (::chatInput.isInitialized) chatInput.text.clear()
+        Toast.makeText(this, "Создан новый чат", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun openChatSession(targetSessionId: String) {
+        if (targetSessionId.isBlank()) return
+        sessionId = targetSessionId
+        getPreferences(MODE_PRIVATE).edit()
+            .putString(activeSessionPreferenceKey(), targetSessionId)
+            .apply()
+        chatMessages.removeAllViews()
+        welcomePanel = null
+        chatScroll.scrollTo(0, 0)
+        loadChatHistory()
     }
 
     private fun loadChatHistory() {
         val token = authToken
-        if (token.isNullOrBlank() || sessionId.isBlank()) {
+        val requestedSessionId = sessionId
+        if (token.isNullOrBlank() || requestedSessionId.isBlank()) {
             showWelcomePanel()
             return
         }
         thread {
             try {
-                val encodedSession = URLEncoder.encode(sessionId, "UTF-8")
+                val encodedSession = URLEncoder.encode(requestedSessionId, "UTF-8")
                 val response = requestJson(
                     "/memory/history?session_id=$encodedSession",
                     JSONObject(),
@@ -1592,7 +1803,7 @@ class MainActivity : Activity() {
                     method = "GET"
                 )
                 val serverMessages = response.optJSONArray("messages") ?: JSONArray()
-                val localMessages = readLocalHistory()
+                val localMessages = readLocalHistory(requestedSessionId)
                 val restoreLocal = serverMessages.length() == 0 && localMessages.length() > 0
                 val messages = if (restoreLocal) localMessages else serverMessages
                 if (restoreLocal) {
@@ -1600,13 +1811,14 @@ class MainActivity : Activity() {
                         requestJson(
                             "/memory/sync",
                             JSONObject()
-                                .put("session_id", sessionId)
+                                .put("session_id", requestedSessionId)
                                 .put("messages", localMessages),
                             token
                         )
                     }
                 }
                 runOnUiThread {
+                    if (sessionId != requestedSessionId) return@runOnUiThread
                     chatMessages.removeAllViews()
                     if (messages.length() == 0) {
                         showWelcomePanel()
@@ -1698,11 +1910,12 @@ class MainActivity : Activity() {
         val selectedProjectContext = projectContextInput.text.toString().take(4000)
         val requestCodeMode = isCodeMode
         val selectedResponseLanguage = responseLanguage
+        val requestSessionId = sessionId
 
         chatInput.text.clear()
         removeWelcomePanel()
         appendChatMessage("user", message)
-        cacheLocalMessage("user", message)
+        cacheLocalMessage("user", message, requestSessionId)
         val pendingReply = appendChatMessage(
             "assistant",
             if (requestCodeMode) "Готовлю результат…" else "Думаю…"
@@ -1718,7 +1931,7 @@ class MainActivity : Activity() {
                         .put("research_web", true)
                         .put("show_activity", includeCodingActivity)
                         .put("project_context", selectedProjectContext)
-                        .put("session_id", sessionId)
+                        .put("session_id", requestSessionId)
                         .put("response_language", selectedResponseLanguage)
                     val response = requestJson("/code/assist", payload, token)
                     val output = StringBuilder()
@@ -1823,21 +2036,25 @@ class MainActivity : Activity() {
                         }
                     }
                     runOnUiThread {
-                        pendingReply?.let { chatMessages.removeView(it) }
+                        if (sessionId == requestSessionId) {
+                            pendingReply?.let { chatMessages.removeView(it) }
+                        }
                         if (code.isNotBlank()) {
                             lastGeneratedCode = code
                             copyCodeButton.isEnabled = true
                         }
-                        if (code.isNotBlank()) {
-                            val codeHeader = "\n\n" + (labels["code"] ?: "CODE") + ":\n"
-                            val summary = output.toString().substringBefore(codeHeader).trim()
-                            appendChatMessage("assistant", summary)
-                            appendChatMessage("assistant", code, true, code)
-                            cacheLocalMessage("assistant", summary + "\n\n[SWIN_CODE_BLOCK]\n" + code)
-                        } else {
-                            val outputText = output.toString()
-                            appendChatMessage("assistant", outputText)
-                            cacheLocalMessage("assistant", outputText)
+                        if (sessionId == requestSessionId) {
+                            if (code.isNotBlank()) {
+                                val codeHeader = "\n\n" + (labels["code"] ?: "CODE") + ":\n"
+                                val summary = output.toString().substringBefore(codeHeader).trim()
+                                appendChatMessage("assistant", summary)
+                                appendChatMessage("assistant", code, true, code)
+                                cacheLocalMessage("assistant", summary + "\n\n[SWIN_CODE_BLOCK]\n" + code, requestSessionId)
+                            } else {
+                                val outputText = output.toString()
+                                appendChatMessage("assistant", outputText)
+                                cacheLocalMessage("assistant", outputText, requestSessionId)
+                            }
                         }
                         sendButton.isEnabled = true
                     }
@@ -1846,26 +2063,32 @@ class MainActivity : Activity() {
                         "/chat",
                         JSONObject()
                             .put("message", message)
-                            .put("session_id", sessionId)
+                            .put("session_id", requestSessionId)
                             .put("response_language", selectedResponseLanguage),
                         token
                     )
                     val answer = response.optString("answer", "Сервер вернул пустой ответ.")
                     runOnUiThread {
-                        pendingReply?.let { chatMessages.removeView(it) }
-                        appendChatMessage("assistant", answer)
-                        cacheLocalMessage("assistant", answer)
+                        if (sessionId == requestSessionId) {
+                            pendingReply?.let { chatMessages.removeView(it) }
+                            appendChatMessage("assistant", answer)
+                            cacheLocalMessage("assistant", answer, requestSessionId)
+                        }
                         sendButton.isEnabled = true
                     }
                 }
             } catch (error: Exception) {
                 runOnUiThread {
-                    pendingReply?.let { chatMessages.removeView(it) }
+                    if (sessionId == requestSessionId) {
+                        pendingReply?.let { chatMessages.removeView(it) }
+                    }
                     if (error is ApiException && error.statusCode == 401) {
                         clearLocalSession("Сессия истекла. Войди снова.")
                     } else {
-                        appendChatMessage("assistant", "Ошибка: ${error.message}")
-                        cacheLocalMessage("assistant", "Ошибка: ${error.message}")
+                        if (sessionId == requestSessionId) {
+                            appendChatMessage("assistant", "Ошибка: ${error.message}")
+                            cacheLocalMessage("assistant", "Ошибка: ${error.message}", requestSessionId)
+                        }
                         sendButton.isEnabled = true
                     }
                 }
