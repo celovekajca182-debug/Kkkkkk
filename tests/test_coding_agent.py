@@ -157,6 +157,26 @@ class CodingAgentTests(unittest.TestCase):
         self.assertEqual(result["verification"]["syntax"]["status"], "limited")
         self.assertIn("matched_examples", result)
 
+    def test_remote_coder_takes_priority_over_close_curated_example(self):
+        calls = []
+
+        def generator(prompt, max_tokens):
+            calls.append((prompt, max_tokens))
+            return "extends Node\n\nfunc spawn_scene(scene: PackedScene) -> Node:\n    var instance = scene.instantiate()\n    add_child(instance)\n    return instance\n"
+
+        result = run_code_assist(
+            "Как создать объект или пулю из PackedScene в Godot 4?",
+            "gdscript",
+            None,
+            research_web=False,
+            text_generator=generator,
+        )
+        self.assertNotEqual(result["status"], "retrieved_example")
+        self.assertEqual(result["generation_engine"], "responses_api")
+        self.assertIn("spawn_scene", result["code"])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("Verified code example:", calls[0][0])
+
     def test_activity_is_hidden_by_default_and_verification_is_returned(self):
         model = FakeModel()
         result = run_code_assist(
