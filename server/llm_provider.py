@@ -50,7 +50,7 @@ def generate_text(
     if len(prompt) > 60_000:
         raise LLMProviderError("The generation prompt exceeds the configured limit.")
 
-    model = os.getenv("SWIN_REASONING_MODEL", "gpt-5.4-mini").strip()
+    model = os.getenv("SWIN_REASONING_MODEL", "gpt-6.2-sol").strip()
     if not model or len(model) > 120:
         raise LLMProviderError("Invalid SWIN_REASONING_MODEL setting.")
     output_limit = max(64, min(int(max_output_tokens), 8192))
@@ -59,6 +59,9 @@ def generate_text(
         "instructions": instructions[:6000],
         "input": prompt,
         "max_output_tokens": output_limit,
+        "reasoning": {
+            "effort": os.getenv("SWIN_REASONING_EFFORT", "medium").strip().lower()
+        },
         "store": False,
     }
     request = urllib.request.Request(
