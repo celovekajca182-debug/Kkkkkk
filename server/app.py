@@ -518,7 +518,11 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             if generation_valid:
                 answer = generated_answer
                 tokenizer = getattr(transformer_model, "tokenizer", None)
-                if getattr(tokenizer, "vocabulary", None) is not None:
+                tokenizer_type = getattr(tokenizer, "tokenizer_type", None)
+                if tokenizer_type == "byte_bpe":
+                    response_mode = "bpe_byte_transformer"
+                    response_source = "собственные веса SWIN Transformer (Byte-level BPE)"
+                elif getattr(tokenizer, "vocabulary", None) is not None:
                     response_mode = "unicode_char_transformer"
                     response_source = "собственные веса SWIN Transformer (Unicode)"
                 else:
@@ -554,9 +558,8 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                     generated_tokens = len(generated_answer.encode("utf-8"))
                 response["generation_tokens_per_second"] = round(generated_tokens / elapsed, 1)
                 response["tokenizer"] = (
-                    "unicode_char"
-                    if getattr(tokenizer, "vocabulary", None) is not None
-                    else "utf8_bytes"
+                    getattr(tokenizer, "tokenizer_type", None)
+                    or ("unicode_char" if getattr(tokenizer, "vocabulary", None) is not None else "utf8_bytes")
                 )
             return response
         except Exception as error:
