@@ -679,6 +679,11 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                     answer += "\n\nИсточники:\n" + "\n".join(source_lines)
             else:
                 answer = localized_fallback(response_language)
+                if references:
+                    answer += "\n\nНайденные источники для самостоятельной проверки:\n" + "\n".join(
+                        f"[{index}] {item['title']} — {item['url']}"
+                        for index, item in enumerate(references[:4], 1)
+                    )
                 response_mode = "safe_fallback"
                 response_source = "защита от бессвязной генерации"
 
