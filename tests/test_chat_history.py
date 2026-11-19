@@ -33,6 +33,20 @@ class ChatHistoryStoreTests(unittest.TestCase):
             self.assertEqual(messages[0]["content"], "Вопрос 5")
             self.assertEqual(messages[-1]["content"], "Ответ 14")
 
+    def test_restore_device_backup_only_into_empty_server_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ChatHistoryStore(Path(directory) / "history.sqlite3")
+            backup = [
+                {"role": "user", "content": "Привет"},
+                {"role": "assistant", "content": "Привет!"},
+            ]
+            self.assertTrue(store.restore_messages(3, "phone", backup))
+            self.assertFalse(store.restore_messages(3, "phone", [
+                {"role": "user", "content": "Подменённый вопрос"},
+                {"role": "assistant", "content": "Подменённый ответ"},
+            ]))
+            self.assertEqual(store.turns(3, "phone"), [("Привет", "Привет!")])
+
     def test_clear_removes_only_selected_session(self):
         with tempfile.TemporaryDirectory() as directory:
             store = ChatHistoryStore(Path(directory) / "history.sqlite3")
