@@ -229,7 +229,7 @@ internal class WorkspaceStore(context: Context, email: String) {
         require(name.isNotBlank()) { "Укажи название." }
         if (kind == "file") {
             require(name.length <= 180) { "Путь файла не должен превышать 180 символов." }
-            require(!name.startsWith("/") && !name.contains('\\\\') && !name.contains(':') && !name.any { it.code == 0 }) {
+            require(!name.startsWith("/") && !name.contains(92.toChar()) && !name.contains(':') && !name.any { it.code == 0 }) {
                 "Недопустимый путь файла."
             }
             val parts = name.split("/")
