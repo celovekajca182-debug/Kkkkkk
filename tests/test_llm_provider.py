@@ -27,7 +27,7 @@ class LlmProviderTests(unittest.TestCase):
     def test_model_roles_are_separate(self):
         self.assertEqual(
             llm_provider.model_for_role("chat"),
-            "Qwen/Qwen3-4B-Instruct-2507",
+            "Qwen/Qwen3-4B-Thinking-2507",
         )
         self.assertEqual(
             llm_provider.model_for_role("code"),
