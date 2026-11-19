@@ -124,6 +124,74 @@ def load_hendrycks(max_per_config: int, max_validation_per_config: int) -> tuple
     return train_rows, validation_rows
 
 
+def load_opencode_reasoning(max_train: int, max_validation: int, seed: int) -> tuple[list[dict], list[dict]]:
+    """Stream licensed competitive-programming reasoning examples from NVIDIA."""
+    from datasets import load_dataset
+
+    dataset_id = "nvidia/OpenCodeReasoning"
+    print("Streaming code-reasoning data:", dataset_id)
+    stream = load_dataset(dataset_id, "split_0", split="split_0", streaming=True)
+    stream = stream.shuffle(seed=seed, buffer_size=20000)
+
+    accepted_licenses = {"cc-by-4.0", "mit", "apache-2.0"}
+    train_rows: list[dict] = []
+    validation_rows: list[dict] = []
+    seen: set[str] = set()
+
+    for row in stream:
+        license_name = clean_text(row.get("license", "")).lower().replace("_", "-")
+        if license_name not in accepted_licenses:
+            continue
+
+        source_split = clean_text(row.get("split", "")).lower()
+        if source_split not in {"train", "valid", "validation"}:
+            # In particular, do not ingest the official test split.
+            continue
+
+        question = clean_text(row.get("input", ""))
+        reasoning = clean_text(row.get("output", ""))
+        solution = clean_text(row.get("solution", ""))
+        if not question or not reasoning or not solution:
+            continue
+        if len(solution) > 12000 or len(reasoning) > 14000:
+            continue
+
+        # Keep the model explanation plus a clearly separated final code section.
+        answer = reasoning
+        if solution not in reasoning:
+            answer += "\n\nFinal Python implementation:\n" + solution
+
+        item = make_record(
+            question,
+            answer,
+            "coding",
+            dataset_id + ":" + clean_text(row.get("source", "unknown")),
+        )
+        if item is None:
+            continue
+
+        key = hashlib.sha256(item["question"].casefold().encode("utf-8")).hexdigest()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        if source_split in {"valid", "validation"}:
+            if len(validation_rows) < max_validation:
+                validation_rows.append(item)
+        else:
+            if len(train_rows) < max_train:
+                train_rows.append(item)
+
+        if len(train_rows) >= max_train and len(validation_rows) >= max_validation:
+            break
+
+    print(
+        "OpenCodeReasoning selected:",
+        len(train_rows), "train /", len(validation_rows), "validation",
+    )
+    return train_rows, validation_rows
+
+
 def load_local_code(data_dir: Path) -> tuple[list[dict], list[dict]]:
     train_rows, validation_rows = [], []
     for row in read_jsonl(data_dir / "mbpp_python_train.jsonl"):
@@ -253,7 +321,9 @@ def main():
     parser.add_argument("--base-model", default="Qwen/Qwen3-1.7B")
     parser.add_argument("--data-dir", default="data")
     parser.add_argument("--output-dir", default="models/swin-qwen3-1.7b-qlora")
-    parser.add_argument("--max-numina", type=int, default=6000)
+    parser.add_argument("--max-numina", type=int, default=5000)
+    parser.add_argument("--max-opencode-train", type=int, default=3000)
+    parser.add_argument("--max-opencode-validation", type=int, default=300)
     parser.add_argument("--max-hendrycks-per-config", type=int, default=250)
     parser.add_argument("--max-hendrycks-validation-per-config", type=int, default=100)
     parser.add_argument("--max-seq-length", type=int, default=1536)
@@ -281,10 +351,15 @@ def main():
     math_train, math_validation = load_hendrycks(
         args.max_hendrycks_per_config, args.max_hendrycks_validation_per_config
     )
+    opencode_train, opencode_validation = load_opencode_reasoning(
+        args.max_opencode_train, args.max_opencode_validation, args.seed
+    )
     code_train, code_validation = load_local_code(data_dir)
 
-    train_rows = deduplicate(numina_train + math_train + code_train)
-    validation_rows = deduplicate(numina_validation + math_validation + code_validation)
+    train_rows = deduplicate(numina_train + math_train + opencode_train + code_train)
+    validation_rows = deduplicate(
+        numina_validation + math_validation + opencode_validation + code_validation
+    )
     coding_train = [row for row in train_rows if row["category"] == "coding"]
     math_train_rows = [row for row in train_rows if row["category"] == "math"]
     if not math_train_rows or not coding_train:
@@ -298,6 +373,7 @@ def main():
     # Two passes over coding samples give programming more weight without greeting filler.
     train_rows = math_train_rows + coding_train + coding_train
     print("Final curriculum — math:", len(math_train_rows), "| coding:", len(coding_train) * 2)
+    print("  NVIDIA OpenCodeReasoning:", len(opencode_train), "train /", len(opencode_validation), "validation")
     print("Validation:", len(validation_rows), "| generic greeting samples: 0")
 
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, Trainer, TrainingArguments
@@ -388,6 +464,7 @@ def main():
         "sources": [
             {"id": MATH_DATASET, "license": "Apache-2.0"},
             {"id": MATH_BENCHMARK, "license": "MIT"},
+            {"id": "nvidia/OpenCodeReasoning", "configuration": "split_0", "license": "CC-BY-4.0", "filter": "train/valid only; test excluded"},
             {"id": "google-research-datasets/mbpp", "configuration": "sanitized", "license": "CC-BY-4.0"},
             {"id": "local SWIN coding_dialogue.jsonl", "license": "review required"},
         ],
