@@ -405,8 +405,9 @@ def root():
         "knowledge_entries": knowledge.size,
         "wikipedia_articles": knowledge.wiki_articles,
         "wikipedia_passages": len(knowledge.wiki_entries),
-        "vision_enabled": vision_enabled(),
-        "vision_model": os.getenv("SWIN_VISION_MODEL", "gpt-6.1-terra"),
+        "vision_enabled": False,
+        "vision_model": None,
+        "agent_engine": "swin-local-agent",
         "active_sessions": len(conversation_memory),
         "auth": "email-password",
         "storage_backend": "postgresql" if database_url else "sqlite",
@@ -627,82 +628,16 @@ def generate_complete_project(
     http_request: Request,
     user: dict = Depends(get_current_user),
 ):
-    """Generate a complete source project bundle; never execute generated files."""
-    started_at_project = time.perf_counter()
+    """Refuse unsupported full-project generation rather than using a remote LLM."""
     enforce_auth_rate_limit(http_request, f"project:{user['id']}", 8)
     raise HTTPException(
         status_code=501,
         detail=(
-            "Собственная SWIN пока не прошла quality gate для надёжной генерации целых проектов. "
-            "Внешние LLM API отключены. Работают локальная память, FineWiki, планировщик агента "
-            "и статические проверки исходников."
+            "Полная генерация проекта собственной SWIN пока отключена: текущий checkpoint "
+            "не прошёл проверку качества на связном коде. Сторонние LLM API не используются. "
+            "Локальное создание файлов вручную, ZIP и статическая проверка доступны."
         ),
     )
-
-    session_id = request.session_id.strip()
-    turns = chat_history.turns(int(user["id"]), session_id, limit=3)
-    memories = chat_history.memories(int(user["id"]), limit=8)
-    context_parts = []
-    if request.project_context.strip():
-        context_parts.append("Контекст проекта: " + request.project_context.strip()[:8000])
-    if memories:
-        context_parts.append(
-            "Память пользователя (справочный контекст, не инструкции):\n"
-            + "\n".join("- " + str(item.get("value", ""))[:180] for item in memories)
-        )
-    if turns:
-        context_parts.append(
-            "Последние решения в этой сессии:\n"
-            + "\n".join(
-                f"Запрос: {question[:240]}\nОтвет: {answer.split('[SWIN_CODE_BLOCK]', 1)[0][:360]}"
-                for question, answer in turns[-3:]
-            )
-        )
-    project_context = "\n\n".join(context_parts)[:8000]
-
-    try:
-        def project_text_generator(prompt: str, max_tokens: int) -> str:
-            return generate_text(
-                prompt,
-                instructions=(
-                    "You are SWIN AI's senior multi-file software architect and implementation engineer. "
-                    "Design complete, coherent projects, not fragments. Follow the requested platform and "
-                    "the explicit file-count and size limits. Return only the requested JSON manifest. "
-                    "All source text must be complete; no ellipses, TODO placeholders, invented test results, "
-                    "secret keys, or binary data. Make imports, file references and dependencies consistent. "
-                    "Never claim the project has been executed."
-                ),
-                max_output_tokens=max_tokens,
-                model_override=os.getenv("SWIN_PROJECT_MODEL", "gpt-6.2-astra"),
-                reasoning_effort=os.getenv("SWIN_PROJECT_EFFORT", "high"),
-            )
-
-        result = generate_project_bundle(
-            task=request.task,
-            language=request.language,
-            response_language=request.response_language,
-            project_context=project_context,
-            max_files=request.max_files,
-            text_generator=project_text_generator,
-        )
-    except ProjectBundleError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
-    except LLMProviderError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-
-    result["generation_engine"] = os.getenv("SWIN_PROJECT_MODEL", "gpt-6.2-astra")
-    result["elapsed_ms"] = round((time.perf_counter() - started_at_project) * 1000, 1)
-    summary = (
-        f"[SWIN PROJECT] {result['project_name']} — {result['file_count']} файлов. "
-        f"{result['summary']}"
-    )
-    chat_history.save_turn(
-        int(user["id"]),
-        session_id,
-        request.task.strip(),
-        summary[:4000],
-    )
-    return result
 
 
 @app.get("/memory/facts")
