@@ -1,7 +1,7 @@
+# SWIN server uses local retrieval, SQLite/PostgreSQL and static analyzers.
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 numpy==2.2.1
 pydantic==2.10.4
 pwdlib[argon2]==0.2.1
-ddgs>=9,<10
 psycopg[binary]>=3.2,<4
