@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Bundle
 import android.graphics.Color
 import android.graphics.Typeface
@@ -54,7 +55,7 @@ class MainActivity : Activity() {
     private var userEmail = ""
     private var sessionId = ""
     private var endpointValue: String = ""
-    private var themeMode: String = "light"
+    private var themeMode: String = "system"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,7 +64,7 @@ class MainActivity : Activity() {
 
         val preferences = getPreferences(MODE_PRIVATE)
         endpointValue = preferences.getString("api_base", "https://kkkkkk-02vl.onrender.com") ?: "https://kkkkkk-02vl.onrender.com"
-        themeMode = preferences.getString("theme_mode", "light") ?: "light"
+        themeMode = preferences.getString("theme_mode", "system") ?: "system"
         authToken = SecureTokenStore.read(this)
         userEmail = preferences.getString("account_email", "") ?: ""
         if (authToken != null && userEmail.isNotBlank()) {
@@ -490,8 +491,15 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun isDarkTheme(): Boolean = when (themeMode) {
+        "dark" -> true
+        "light" -> false
+        else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+    }
+
     private fun chatColor(key: String): Int {
-        val dark = themeMode == "dark"
+        val dark = isDarkTheme()
         return when (key) {
             "background" -> if (dark) Color.rgb(20, 24, 22) else Color.rgb(250, 248, 243)
             "panel" -> if (dark) Color.rgb(31, 37, 33) else Color.rgb(255, 254, 251)
@@ -512,12 +520,20 @@ class MainActivity : Activity() {
     }
 
     private fun showThemeSettings() {
-        val options = arrayOf("Светлая", "Тёмная")
-        val selected = if (themeMode == "dark") 1 else 0
+        val options = arrayOf("Как в системе", "Светлая", "Тёмная")
+        val selected = when (themeMode) {
+            "light" -> 1
+            "dark" -> 2
+            else -> 0
+        }
         AlertDialog.Builder(this)
             .setTitle("Оформление SWIN AI")
             .setSingleChoiceItems(options, selected) { dialog, which ->
-                themeMode = if (which == 1) "dark" else "light"
+                themeMode = when (which) {
+                    1 -> "light"
+                    2 -> "dark"
+                    else -> "system"
+                }
                 getPreferences(MODE_PRIVATE).edit()
                     .putString("theme_mode", themeMode)
                     .apply()
@@ -535,6 +551,12 @@ class MainActivity : Activity() {
         cornerRadius = chatDp(radius).toFloat()
         setColor(color)
         if (stroke != null) setStroke(chatDp(1), stroke)
+    }
+
+    private fun copyMessageToClipboard(value: String, confirmation: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("SWIN AI", value))
+        Toast.makeText(this, confirmation, Toast.LENGTH_SHORT).show()
     }
 
     private fun appendChatMessage(role: String, value: String, code: Boolean = false, copyText: String? = null): LinearLayout? {
@@ -556,33 +578,117 @@ class MainActivity : Activity() {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             letterSpacing = 0.12f
         }
-        val body = makeText(value, if (code) 13f else 15f, chatColor("ink")).apply {
-            setLineSpacing(chatDp(3).toFloat(), 1f)
-            setTextIsSelectable(true)
-            if (code) {
-                typeface = Typeface.create("monospace", Typeface.NORMAL)
-                background = chatBg(chatColor("codeBubble"), 9)
-                setPadding(chatDp(9), chatDp(9), chatDp(9), chatDp(9))
+
+        fun addBody(text: String, monospace: Boolean = false) {
+            if (text.isBlank()) return
+            val body = makeText(
+                text,
+                if (monospace) 13f else 15f,
+                chatColor("ink")
+            ).apply {
+                setLineSpacing(chatDp(3).toFloat(), 1f)
+                setTextIsSelectable(true)
+                if (monospace) {
+                    typeface = Typeface.create("monospace", Typeface.NORMAL)
+                    background = chatBg(chatColor("codeBubble"), 9)
+                    setPadding(chatDp(9), chatDp(9), chatDp(9), chatDp(9))
+                }
             }
+            card.addView(body, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = chatDp(4)
+            })
         }
-        card.addView(tag)
-        card.addView(View(this), LinearLayout.LayoutParams(1, chatDp(5)))
-        card.addView(body)
-        if (!user && !copyText.isNullOrBlank()) {
-            val copyButton = TextView(this).apply {
-                text = "⧉  Копировать код"
+
+        fun addCopyAction(text: String, label: String, confirmation: String) {
+            val action = TextView(this).apply {
+                this.text = "⧉  $label"
                 textSize = 12f
                 setTextColor(chatColor("accent"))
                 gravity = Gravity.END or Gravity.CENTER_VERTICAL
-                setPadding(0, chatDp(10), chatDp(2), 0)
+                setPadding(0, chatDp(8), chatDp(2), 0)
+                setOnClickListener { copyMessageToClipboard(text, confirmation) }
+            }
+            card.addView(action, LinearLayout.LayoutParams(-1, chatDp(30)))
+        }
+
+        fun addCodeBlock(language: String, codeText: String) {
+            val codeCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(chatDp(9), chatDp(7), chatDp(9), chatDp(9))
+                background = chatBg(chatColor("codeBubble"), 10)
+            }
+            val toolbar = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val languageLabel = makeText(
+                language.ifBlank { "CODE" }.uppercase(),
+                10f,
+                chatColor("muted")
+            ).apply {
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                letterSpacing = 0.08f
+            }
+            toolbar.addView(languageLabel, LinearLayout.LayoutParams(0, chatDp(28), 1f))
+            val copy = TextView(this).apply {
+                text = "⧉ Копировать"
+                textSize = 11f
+                setTextColor(chatColor("accent"))
+                gravity = Gravity.CENTER
+                setPadding(chatDp(7), 0, chatDp(2), 0)
                 setOnClickListener {
-                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("SWIN AI code", copyText))
-                    Toast.makeText(this@MainActivity, "Код скопирован", Toast.LENGTH_SHORT).show()
+                    copyMessageToClipboard(codeText, "Код скопирован")
                 }
             }
-            card.addView(copyButton, LinearLayout.LayoutParams(-1, chatDp(30)))
+            toolbar.addView(copy, LinearLayout.LayoutParams(-2, chatDp(28)))
+            codeCard.addView(toolbar)
+            val codeView = makeText(codeText, 13f, chatColor("ink")).apply {
+                typeface = Typeface.create("monospace", Typeface.NORMAL)
+                setTextIsSelectable(true)
+                setLineSpacing(chatDp(2).toFloat(), 1f)
+                setPadding(0, chatDp(5), 0, 0)
+            }
+            codeCard.addView(codeView)
+            card.addView(codeCard, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = chatDp(7)
+            })
         }
+
+        card.addView(tag)
+        card.addView(View(this), LinearLayout.LayoutParams(1, chatDp(5)))
+
+        if (code) {
+            addBody(value, monospace = true)
+            if (!copyText.isNullOrBlank()) {
+                addCopyAction(copyText, "Копировать код", "Код скопирован")
+            }
+        } else if (!user) {
+            val codeFence = Regex("(?s)\`\`\`([A-Za-z0-9_+#.-]*)\\s*\\n(.*?)\`\`\`")
+            val matches = codeFence.findAll(value).toList()
+            if (matches.isEmpty()) {
+                addBody(value)
+                addCopyAction(value, "Копировать ответ", "Ответ скопирован")
+            } else {
+                var cursor = 0
+                for (match in matches) {
+                    if (match.range.first > cursor) {
+                        addBody(value.substring(cursor, match.range.first))
+                    }
+                    addCodeBlock(
+                        match.groupValues[1],
+                        match.groupValues[2].trimEnd()
+                    )
+                    cursor = match.range.last + 1
+                }
+                if (cursor < value.length) {
+                    addBody(value.substring(cursor))
+                }
+                addCopyAction(value, "Копировать всё", "Ответ скопирован")
+            }
+        } else {
+            addBody(value)
+        }
+
         val maxW = (resources.displayMetrics.widthPixels * 0.88f).toInt()
         row.addView(card, LinearLayout.LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT))
         chatMessages.addView(row, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -672,7 +778,7 @@ class MainActivity : Activity() {
         val accent = chatColor("accent")
         window.statusBarColor = bg
         window.navigationBarColor = bg
-        window.decorView.systemUiVisibility = if (themeMode == "dark") 0 else
+        window.decorView.systemUiVisibility = if (isDarkTheme()) 0 else
             (View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR)
 
         val root = LinearLayout(this).apply {
@@ -711,7 +817,7 @@ class MainActivity : Activity() {
             setOnClickListener { showChatSettings() }
         }
         val themeButton = TextView(this).apply {
-            text = if (themeMode == "dark") "☀" else "☾"
+            text = if (isDarkTheme()) "☀" else "☾"
             textSize = 21f
             gravity = Gravity.CENTER
             setTextColor(ink)
