@@ -56,7 +56,7 @@ class MainActivity : Activity() {
     private var sessionId = ""
     private var endpointValue: String = ""
     private var themeMode: String = "system"
-    private var responseLanguage: String = "auto"
+    private var responseLanguage: String = "ru"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,7 +66,21 @@ class MainActivity : Activity() {
         val preferences = getPreferences(MODE_PRIVATE)
         endpointValue = preferences.getString("api_base", "https://kkkkkk-02vl.onrender.com") ?: "https://kkkkkk-02vl.onrender.com"
         themeMode = preferences.getString("theme_mode", "system") ?: "system"
-        responseLanguage = preferences.getString("response_language", "auto") ?: "auto"
+        // One-time migration: replace the former auto-detect default with Russian.
+        // A language explicitly selected by the user is preserved.
+        val languageDefaultMigrated = preferences.getBoolean("russian_default_v1", false)
+        val savedResponseLanguage = preferences.getString("response_language", null)
+        responseLanguage = if (!languageDefaultMigrated) {
+            val initialLanguage = savedResponseLanguage
+                ?.takeIf { it.isNotBlank() && it != "auto" } ?: "ru"
+            preferences.edit()
+                .putString("response_language", initialLanguage)
+                .putBoolean("russian_default_v1", true)
+                .apply()
+            initialLanguage
+        } else {
+            preferences.getString("response_language", "ru") ?: "ru"
+        }
         authToken = SecureTokenStore.read(this)
         userEmail = preferences.getString("account_email", "") ?: ""
         if (authToken != null && userEmail.isNotBlank()) {
