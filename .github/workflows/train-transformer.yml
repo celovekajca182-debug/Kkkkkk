@@ -1,10 +1,8 @@
 name: Train SWIN Transformer
 
+# Legacy from-scratch trainer. Kept for comparison only; use the Colab QLoRA
+# notebook for advanced mathematics and coding fine-tuning.
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - ".github/workflows/train-transformer.yml"
   workflow_dispatch:
     inputs:
       pretrain_epochs:
