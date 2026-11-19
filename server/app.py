@@ -398,6 +398,16 @@ def clear_memory(
     }
 
 
+@app.get("/memory/sessions")
+def get_memory_sessions(
+    limit: int = Query(default=50, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+):
+    """Return recent conversation summaries belonging only to the current account."""
+    items = chat_history.sessions(int(user["id"]), limit=limit)
+    return {"items": items, "count": len(items)}
+
+
 @app.get("/memory/history")
 def get_memory_history(
     session_id: str = Query(min_length=1, max_length=80),
