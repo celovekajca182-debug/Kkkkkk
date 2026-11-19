@@ -7,6 +7,7 @@ from coding_agent import (
     LANGUAGES,
     _make_prompt,
     detect_language,
+    looks_like_garbage_code,
     run_code_assist,
     retrieve_coding_examples,
     search_documentation,
@@ -88,6 +89,25 @@ class CodingAgentTests(unittest.TestCase):
         self.assertIn("https://docs.python.org/3/", urls)
         self.assertTrue(all(url.startswith("https://") for url in urls))
         self.assertEqual(results[0]["trust"], "primary")
+
+    def test_corrupt_repeated_generation_is_rejected(self):
+        self.assertTrue(looks_like_garbage_code("оооооооооооооооооооо"))
+        self.assertTrue(looks_like_garbage_code("код � сломан"))
+        self.assertFalse(looks_like_garbage_code(
+            "def add(a, b):\\n    return a + b"
+        ))
+
+    def test_corrupt_model_output_is_not_returned_as_code(self):
+        model = FakeModel("оооооооооооооооооооо")
+        result = run_code_assist(
+            "Создай сложную Python функцию для обработки данных",
+            "python",
+            model,
+            research_web=False,
+        )
+        self.assertEqual(result["status"], "generation_rejected")
+        self.assertEqual(result["code"], "")
+        self.assertEqual(result["validation"]["method"], "generation_quality_guard")
 
     def test_retrieves_relevant_godot_code_example(self):
         matches = retrieve_coding_examples(
