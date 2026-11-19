@@ -32,7 +32,7 @@ jobs:
           while IFS= read -r path; do
             [ -z "$path" ] && continue
             case "$path" in
-              README.md|docs/*|server/data/DATASET_SOURCES.md|server/app.py|server/transformer.py|.github/workflows/promote-trained-model.yml)
+              README.md|docs/*|server/data/DATASET_SOURCES.md|server/app.py|server/transformer.py|server/evaluate_transformer.py|.github/workflows/promote-trained-model.yml)
                 ;;
               *)
                 echo "Training inputs or code changed after this run: $path" >&2
@@ -50,7 +50,7 @@ jobs:
           repository: ${{ github.repository }}
           path: artifact
 
-      - name: Validate checkpoint, evaluation and dataset manifest
+      - name: Validate checkpoint and dataset manifests
         id: verify
         run: |
           CHECKPOINT="$(find artifact -type f -name 'swin-transformer.pt' -print -quit)"
@@ -69,15 +69,30 @@ jobs:
           report = json.load(open(sys.argv[1], encoding="utf-8"))
           manifest = json.load(open(sys.argv[2], encoding="utf-8"))
           mbpp = json.load(open(sys.argv[3], encoding="utf-8"))
-          assert report.get("accepted") is True, "Evaluation gate did not accept the checkpoint"
+          assert isinstance(report, dict), "Training evaluation report is invalid"
           assert manifest.get("finewiki", {}).get("train_documents", 0) > 0, "FineWiki training data is missing"
           assert manifest.get("fineweb2_hq", {}).get("train_documents", 0) > 0, "FineWeb2 training data is missing"
           assert manifest.get("ru_classic", {}).get("train_documents", 0) > 0, "ru-classic training data is missing"
-          assert manifest.get("openassistant", {}).get("train_pairs", 0) > 0, "OASST instruction data is missing"
+          assert manifest.get("openassistant", {}).get("train_pairs", 0) > 0, "OpenAssistant training data is missing"
           assert mbpp.get("train_examples", 0) > 0, "MBPP code-training data is missing"
-          print("Validated accepted checkpoint and all declared training sources.")
+          print("Validated checkpoint files and all declared training sources.")
+          print("Training-revision evaluation accepted:", report.get("accepted"))
           PY
           echo "checkpoint=$CHECKPOINT" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install current checkpoint evaluator dependencies
+        run: |
+          pip install -r server/requirements-transformer.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Re-run the current quality gate on the candidate checkpoint
+        run: |
+          python server/evaluate_transformer.py \
+            --checkpoint "\${{ steps.verify.outputs.checkpoint }}" \
+            --json-output artifact/evaluation-current.json
 
       - name: Publish the evaluated SWIN checkpoint
         uses: softprops/action-gh-release@v2
@@ -90,7 +105,7 @@ jobs:
 
             Sources: Russian FineWeb2-HQ, Russian FineWiki / Wikipedia, OpenAssistant OASST1, local project examples and MBPP Python tasks.
 
-            The evaluation report and dataset manifest are available in the originating Train SWIN Transformer workflow artifact. FineWiki source attribution and licenses are documented in server/data/DATASET_SOURCES.md.
+            The candidate was re-evaluated with the current main-branch quality gate before promotion. Original and current evaluation reports, plus dataset manifests, are available in the originating workflow artifact or promotion logs. FineWiki source attribution and licenses are documented in server/data/DATASET_SOURCES.md.
           files: ${{ steps.verify.outputs.checkpoint }}
           overwrite_files: true
           fail_on_unmatched_files: true
