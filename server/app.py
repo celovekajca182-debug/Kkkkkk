@@ -617,13 +617,21 @@ def code_assist(
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     result["elapsed_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
-    result["model_loaded"] = transformer_model is not None or provider_configured()
-    result["generation_engine"] = (
-        "qwen2_5_coder" if provider_configured()
-        else "local_swin_transformer" if transformer_model is not None
-        else "local_retrieval_and_static_tools"
-    )
-    result["model"] = CODE_MODEL if provider_configured() else None
+    raw_engine = result.get("generation_engine")
+    result["model_loaded"] = transformer_model is not None
+    result["model_configured"] = provider_configured()
+    if raw_engine == "responses_api":
+        result["generation_engine"] = "qwen2_5_coder"
+        result["model"] = CODE_MODEL
+    elif raw_engine == "local_swin_transformer":
+        result["generation_engine"] = "local_swin_transformer_fallback" if provider_configured() else raw_engine
+        result["model"] = "local_swin_transformer"
+    elif result.get("status") == "retrieved_example":
+        result["generation_engine"] = "curated_local_example"
+        result["model"] = None
+    else:
+        result["generation_engine"] = raw_engine or "local_retrieval_and_static_tools"
+        result["model"] = None
     result["agent"] = execute_local_plan(
         request.task,
         language=request.response_language,
@@ -895,14 +903,28 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             tokenizer=tokenizer,
             block_size=block_size,
         )
+        used_remote_model = False
         try:
             if provider_configured():
-                generated_answer = generate_model_text(
-                    prompt,
-                    role="chat",
-                    max_tokens=int(os.getenv("SWIN_CHAT_MAX_TOKENS", "1200")),
-                    temperature=float(os.getenv("SWIN_CHAT_TEMPERATURE", "0.25")),
-                ).strip()
+                try:
+                    generated_answer = generate_model_text(
+                        prompt,
+                        role="chat",
+                        max_tokens=int(os.getenv("SWIN_CHAT_MAX_TOKENS", "1200")),
+                        temperature=float(os.getenv("SWIN_CHAT_TEMPERATURE", "0.25")),
+                    ).strip()
+                    used_remote_model = True
+                except Exception as provider_error:
+                    if transformer_model is None:
+                        raise
+                    print(f"Qwen chat provider error; using local SWIN fallback: {provider_error}")
+                    generated_answer = transformer_model.generate(
+                        prompt,
+                        max_new_tokens=220,
+                        temperature=0.0,
+                        top_k=1,
+                        stop_at_newline=False,
+                    ).strip()
             else:
                 generated_answer = transformer_model.generate(
                     prompt,
@@ -916,10 +938,10 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             generation_valid = bool(generated_answer) and not looks_like_garbage(generated_answer)
             if generation_valid:
                 answer = generated_answer
-                model_label = CHAT_MODEL if provider_configured() else "SWIN Transformer"
+                model_label = CHAT_MODEL if used_remote_model else "SWIN Transformer"
                 response_mode = (
-                    "retrieval_augmented_qwen3" if provider_configured() and (references or persistent_memories)
-                    else "qwen3_chat" if provider_configured()
+                    "retrieval_augmented_qwen3" if used_remote_model and (references or persistent_memories)
+                    else "qwen3_chat" if used_remote_model
                     else "retrieval_augmented_transformer" if (references or persistent_memories)
                     else "structured_transformer"
                 )
@@ -958,7 +980,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                 memory_used=bool(persistent_memories),
                 reasoning_mode="private_plan_evidence_check",
             )
-            if generation_valid and not provider_configured():
+            if generation_valid and not used_remote_model:
                 try:
                     generated_tokens = len(tokenizer.encode(generated_answer)) if tokenizer is not None else len(generated_answer.encode("utf-8"))
                 except Exception:
@@ -966,9 +988,15 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                 elapsed = max(time.perf_counter() - started_at, 0.001)
                 result["generation_tokens_per_second"] = round(generated_tokens / elapsed, 1)
                 result["tokenizer"] = getattr(tokenizer, "tokenizer_type", None) or "utf8_bytes"
+            if used_remote_model:
+                result["model"] = CHAT_MODEL
+                result["generation_engine"] = "qwen3"
+            else:
+                result["model"] = "local_swin_transformer"
+                result["generation_engine"] = "local_swin_transformer"
             return result
         except Exception as error:
-            print(f"Transformer generation error: {error}")
+            print(f"Model generation error: {error}")
 
     # Keep curated knowledge useful when the Transformer is unavailable.
     if local_match is not None:
