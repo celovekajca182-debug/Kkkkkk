@@ -89,7 +89,7 @@ SWIN остаётся небольшой экспериментальной мо
 - Базовая модель: [Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), лицензия Apache-2.0.
 - Метод: 4-bit QLoRA / PEFT; базовые веса остаются замороженными, обучается компактный адаптер SWIN.
 - Математика: [NuminaMath-CoT](https://huggingface.co/datasets/project-numina/NuminaMath-CoT) и семь областей [Hendrycks MATH](https://huggingface.co/datasets/EleutherAI/hendrycks_math).
-- Программирование: MBPP sanitized и проверенные локальные примеры SWIN.
+- Программирование: [NVIDIA OpenCodeReasoning](https://huggingface.co/datasets/nvidia/OpenCodeReasoning) (CC BY 4.0; reasoning + Python solutions), MBPP sanitized и проверенные локальные примеры SWIN.
 - Общие приветствия и пустой small-talk в этот этап не добавляются.
 - Готовый ноутбук: [notebooks/SWIN_AI_QLoRA_Colab.ipynb](notebooks/SWIN_AI_QLoRA_Colab.ipynb).
 - Код обучения: [server/train_swin_qlora.py](server/train_swin_qlora.py).
