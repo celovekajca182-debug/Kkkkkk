@@ -67,6 +67,17 @@ Wikipedia/FineWiki — не «бесплатный текст без услов�
 - Фильтр: синтаксический AST-разбор. Код задач и тестов не запускается при подготовке.
 - Train и validation сохраняются раздельно.
 
+### NVIDIA OpenCodeReasoning — competitive programming
+
+- Dataset: https://huggingface.co/datasets/nvidia/OpenCodeReasoning
+- Configuration: `split_0`; fields `input`, `output`, `solution`, `license`, `split`, `difficulty`.
+- Назначение: задачи соревновательного программирования с объяснением решения и отдельным Python-кодом.
+- Лицензия: CC BY 4.0 по карточке набора; исходная лицензия каждой строки также проверяется по полю `license`.
+- Подготовка: streaming, разрешены только `cc-by-4.0`, `mit` и `apache-2.0`; код проходит AST-синтаксическую проверку; официальный test split исключён. Если источник содержит только train, 5% train выбираются детерминированно в validation.
+- В Colab по умолчанию: до 3 000 train и 300 validation примеров.
+
+Атрибуция: NVIDIA, OpenCodeReasoning, paper arXiv:2504.01943. Для CC BY 4.0 сохраняй attribution и лицензионное уведомление при распространении производных материалов.
+
 ## Как обучается SWIN
 
 1. **Pretraining:** предсказание следующего токена на русском, немецком, испанском, французском, китайском, итальянском, португальском и японском FineWeb2-HQ; FineWiki и ru-classic добавляют русские данные.
