@@ -49,8 +49,11 @@ LANGUAGE_ALIASES = {
 
 
 def normalize_response_language(value: str | None) -> str:
-    candidate = (value or "auto").strip().lower()
+    candidate = (value or "auto").strip().lower().replace("_", "-")
     candidate = LANGUAGE_ALIASES.get(candidate, candidate)
+    # Accept BCP-47 variants such as pt-BR, en-US and zh-Hans-CN.
+    if candidate not in SUPPORTED_CHAT_LANGUAGES:
+        candidate = candidate.split("-", 1)[0]
     return candidate if candidate in SUPPORTED_CHAT_LANGUAGES else "auto"
 
 
@@ -65,7 +68,10 @@ def detect_response_language(text: str) -> str:
         return "uk"
     if re.search(r"[а-яё]", value):
         return "ru"
-    if re.search(r"[\u3040-\u30ff]", value):
+    if (
+        re.search(r"[\u3040-\u30ff]", value)
+        or any(marker in value for marker in ("日本語", "ありがとう", "です", "ます", "ください"))
+    ):
         return "ja"
     if re.search(r"[\u4e00-\u9fff]", value):
         return "zh"
