@@ -81,6 +81,7 @@ def build_pretraining_corpus(
     data_path: Path,
     web_path: Path,
     wiki_path: Path | None = None,
+    classic_path: Path | None = None,
 ) -> str:
     pieces = [
         "Русскоязычный текстовый корпус SWIN AI. Задача модели — предсказывать следующий токен по предыдущему контексту.",
@@ -94,6 +95,11 @@ def build_pretraining_corpus(
         pieces.extend([
             "Энциклопедические материалы русской Wikipedia (FineWiki).",
             wiki_path.read_text(encoding="utf-8"),
+        ])
+    if classic_path is not None and classic_path.is_file():
+        pieces.extend([
+            "Небольшая языковая выборка русской классической литературы (CC0).",
+            classic_path.read_text(encoding="utf-8"),
         ])
     return join_corpus(*pieces)
 
@@ -365,6 +371,8 @@ def main():
     parser.add_argument("--web-validation", default="data/fineweb2_ru_validation.txt")
     parser.add_argument("--wiki-train", default="data/finewiki_ru_train.txt")
     parser.add_argument("--wiki-validation", default="data/finewiki_ru_validation.txt")
+    parser.add_argument("--classic-train", default="data/ru_classic_train.txt")
+    parser.add_argument("--classic-validation", default="data/ru_classic_validation.txt")
     parser.add_argument("--instructions-train", default="data/openassistant_ru_train.jsonl")
     parser.add_argument("--instructions-validation", default="data/openassistant_ru_validation.jsonl")
     parser.add_argument("--coding-train", default="data/mbpp_python_train.jsonl")
@@ -400,9 +408,14 @@ def main():
         Path(args.data),
         Path(args.web_train),
         Path(args.wiki_train),
+        Path(args.classic_train),
     )
     validation_parts = []
-    for validation_path in (Path(args.web_validation), Path(args.wiki_validation)):
+    for validation_path in (
+        Path(args.web_validation),
+        Path(args.wiki_validation),
+        Path(args.classic_validation),
+    ):
         if validation_path.is_file():
             validation_parts.append(validation_path.read_text(encoding="utf-8"))
     pretrain_validation = join_corpus(*validation_parts)
