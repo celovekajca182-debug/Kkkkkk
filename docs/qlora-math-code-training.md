@@ -9,7 +9,7 @@ The new train_swin_qlora.py fine-tunes the pretrained Qwen/Qwen3-1.7B model usin
 ## Curriculum — no greeting filler
 
 - Advanced mathematics: project-numina/NuminaMath-CoT (Apache-2.0), with olympiad, AIME/AMC, AoPS and other problem sources; plus EleutherAI/hendrycks_math (MIT) across seven mathematical areas.
-- Programming: MBPP sanitized (CC BY 4.0) plus locally reviewed SWIN coding examples, including project-specific languages and frameworks.
+- Programming: NVIDIA OpenCodeReasoning split_0 (CC BY 4.0; train plus deterministic holdout from train or the source validation split; official test excluded), MBPP sanitized (CC BY 4.0), plus locally reviewed SWIN coding examples. OpenCodeReasoning contributes Python contest problems with reasoning responses and code solutions.
 - Generic greeting/dialogue samples: zero in this fine-tuning stage. The base model already has general conversational capability; this limited training budget is reserved for mathematics and code.
 
 Math prompts request rigorous derivations, justified steps, verification and a final answer. Coding prompts request maintainable implementations and respect for supplied constraints. User prompt tokens are masked from the training loss; assistant answer tokens are trained.
@@ -34,7 +34,9 @@ Command-line equivalent from the server directory:
     python prepare_coding_data.py --max-train 700 --max-validation 160
     python train_swin_qlora.py \
       --base-model Qwen/Qwen3-1.7B \
-      --max-numina 6000 \
+      --max-numina 5000 \\
+  --max-opencode-train 3000 \\
+  --max-opencode-validation 300 \\
       --max-hendrycks-per-config 250 \
       --max-hendrycks-validation-per-config 100 \
       --max-seq-length 1536 \
