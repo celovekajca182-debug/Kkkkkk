@@ -123,8 +123,8 @@ class ProjectAgentTests(unittest.TestCase):
 
     def test_project_manifest_validator_checks_every_file(self):
         result = validate_project_manifest([
-            {"path": "src/main.py", "language": "python", "content": "def main():\\n    return 1\\n"},
-            {"path": "README.md", "language": "other", "content": "# Demo\\n"},
+            {"path": "src/main.py", "language": "python", "content": "def main():\n    return 1\n"},
+            {"path": "README.md", "language": "other", "content": "# Demo\n"},
         ])
         self.assertEqual(result["file_count"], 2)
         self.assertEqual(result["failed_files"], 0)
@@ -142,7 +142,7 @@ class ProjectAgentTests(unittest.TestCase):
 
     def test_project_manifest_validator_marks_invalid_python(self):
         result = validate_project_manifest([
-            {"path": "main.py", "content": "def broken(:\\n"}
+            {"path": "main.py", "content": "def broken(:\n"}
         ])
         self.assertEqual(result["status"], "needs_review")
         self.assertEqual(result["failed_files"], 1)
