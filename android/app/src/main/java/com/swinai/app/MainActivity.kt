@@ -671,9 +671,13 @@ class MainActivity : Activity() {
         }
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(chatDp(14), chatDp(11), chatDp(14), chatDp(11))
-            background = if (user) chatBg(chatColor("userBubble"), 17)
-                else chatBg(chatColor("assistantBubble"), 16, chatColor("stroke"))
+            if (user) {
+                setPadding(chatDp(14), chatDp(10), chatDp(14), chatDp(10))
+                background = chatBg(chatColor("userBubble"), 17)
+            } else {
+                setPadding(0, chatDp(3), 0, chatDp(3))
+                background = ColorDrawable(Color.TRANSPARENT)
+            }
         }
         val tag = makeText(if (user) "ВЫ" else "SWIN AI", 10f,
             if (user) chatColor("userLabel") else chatColor("assistantLabel")).apply {
@@ -769,8 +773,10 @@ class MainActivity : Activity() {
             })
         }
 
-        card.addView(tag)
-        card.addView(View(this), LinearLayout.LayoutParams(1, chatDp(5)))
+        if (!user) {
+            card.addView(tag)
+            card.addView(View(this), LinearLayout.LayoutParams(1, chatDp(5)))
+        }
 
         if (code) {
             addBody(value, monospace = true)
@@ -814,21 +820,11 @@ class MainActivity : Activity() {
         }
 
         removeWelcomePanel()
-        if (!user) {
-            val avatar = TextView(this).apply {
-                text = "S"
-                textSize = 11f
-                gravity = Gravity.CENTER
-                typeface = Typeface.create("sans-serif", Typeface.BOLD)
-                setTextColor(chatColor("sendText"))
-                background = chatBg(chatColor("accent"), 10)
-            }
-            row.addView(avatar, LinearLayout.LayoutParams(chatDp(27), chatDp(27)).apply {
-                marginEnd = chatDp(7)
-                topMargin = chatDp(4)
-            })
+        val maxW = if (user) {
+            (resources.displayMetrics.widthPixels * 0.88f).toInt()
+        } else {
+            ViewGroup.LayoutParams.MATCH_PARENT
         }
-        val maxW = (resources.displayMetrics.widthPixels * if (user) 0.88f else 0.80f).toInt()
         row.addView(card, LinearLayout.LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT))
         chatMessages.addView(row, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
         chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
