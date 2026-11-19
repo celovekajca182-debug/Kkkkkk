@@ -37,6 +37,7 @@ from postgres_stores import (
     migrate_sqlite_to_postgres,
 )
 from knowledge import KnowledgeBase
+from vision import VisionError, analyze_images, vision_enabled
 from model import TinyCharRNN
 
 app = FastAPI(title="SWIN AI", version="0.6.0")
@@ -94,7 +95,57 @@ if not transformer_path.is_file() and transformer_url:
         except Exception:
             pass
 knowledge_path = Path(os.getenv("SWIN_KNOWLEDGE_PATH", "data/knowledge.json"))
-knowledge = KnowledgeBase(knowledge_path)
+wiki_path = Path(os.getenv(
+    "SWIN_WIKIPEDIA_CORPUS_PATH",
+    str(knowledge_path.with_name("finewiki_ru_train.txt")),
+))
+wiki_url = os.getenv(
+    "SWIN_WIKIPEDIA_CORPUS_URL",
+    "https://github.com/celovekajca182-debug/Kkkkkk/releases/download/swin-model-latest/finewiki_ru_train.txt",
+).strip()
+
+# Restore the prepared Russian Wikipedia/FineWiki passages on ephemeral hosts.
+if not wiki_path.is_file() and wiki_url:
+    temporary_wiki = wiki_path.with_suffix(wiki_path.suffix + ".download")
+    try:
+        wiki_path.parent.mkdir(parents=True, exist_ok=True)
+        request = urllib.request.Request(
+            wiki_url,
+            headers={"User-Agent": "SWIN-AI-Wikipedia-Loader/1.0"},
+        )
+        max_wiki_bytes = max(1_000_000, min(
+            int(os.getenv("SWIN_WIKIPEDIA_MAX_BYTES", str(16 * 1024 * 1024))),
+            32 * 1024 * 1024,
+        ))
+        total = 0
+        with urllib.request.urlopen(request, timeout=90) as response, temporary_wiki.open("wb") as output:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_wiki_bytes:
+                    raise ValueError("FineWiki corpus exceeds the configured download limit.")
+                output.write(chunk)
+        if total < 1000:
+            raise ValueError("Downloaded FineWiki corpus is unexpectedly small.")
+        temporary_wiki.replace(wiki_path)
+        print(f"SWIN FineWiki corpus downloaded: {total:,} bytes")
+    except Exception as error:
+        print(f"SWIN FineWiki corpus download error: {error}")
+        temporary_wiki.unlink(missing_ok=True)
+
+knowledge = KnowledgeBase(
+    knowledge_path,
+    wiki_path=wiki_path,
+    max_wiki_chunks=int(os.getenv("SWIN_WIKIPEDIA_MAX_CHUNKS", "12000")),
+)
+print(
+    "SWIN knowledge index loaded: "
+    f"curated={len(knowledge.entries)}, "
+    f"wikipedia_articles={knowledge.wiki_articles}, "
+    f"wikipedia_passages={len(knowledge.wiki_entries)}"
+)
 
 # Keep the CPU thread pool small on modest Render instances.
 try:
@@ -148,6 +199,13 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     session_id: str = Field(min_length=1, max_length=80)
     response_language: str = Field(default="ru", min_length=2, max_length=16)
+
+
+class ImageAnalysisRequest(BaseModel):
+    question: str = Field(default="", max_length=2000)
+    session_id: str = Field(min_length=1, max_length=80)
+    response_language: str = Field(default="ru", min_length=2, max_length=16)
+    images: list[str] = Field(min_length=1, max_length=3)
 
 
 class CodeAssistRequest(BaseModel):
@@ -307,6 +365,10 @@ def root():
         "transformer_loaded": transformer_model is not None,
         "rnn_loaded": rnn_model is not None,
         "knowledge_entries": knowledge.size,
+        "wikipedia_articles": knowledge.wiki_articles,
+        "wikipedia_passages": len(knowledge.wiki_entries),
+        "vision_enabled": vision_enabled(),
+        "vision_model": os.getenv("SWIN_VISION_MODEL", "gpt-5.4-mini"),
         "active_sessions": len(conversation_memory),
         "auth": "email-password",
         "storage_backend": "postgresql" if database_url else "sqlite",
@@ -324,6 +386,9 @@ def health():
         "transformer_loaded": transformer_model is not None,
         "rnn_loaded": rnn_model is not None,
         "knowledge_entries": knowledge.size,
+        "wikipedia_articles": knowledge.wiki_articles,
+        "wikipedia_passages": len(knowledge.wiki_entries),
+        "vision_enabled": vision_enabled(),
         "storage_backend": "postgresql" if database_url else "sqlite",
         "persistent_storage": bool(database_url),
         "cross_device_memory": bool(database_url),
@@ -630,7 +695,15 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
 
     # Search on explicit lookup requests and time-sensitive questions.
     research_requested = should_research(message)
-    references = search_web_many(message, max_results=6) if research_requested else []
+    # Prefer current web sources for time-sensitive research; use FineWiki passages
+    # as local encyclopedic context for general Russian-language questions.
+    references = (
+        search_web_many(message, max_results=6)
+        if research_requested
+        else knowledge.search_many(message, limit=3)
+        if response_language == "ru"
+        else []
+    )
     local_match = knowledge.search(message) if response_language == "ru" else None
 
     if local_match is not None and not research_requested:
@@ -773,6 +846,43 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     raise HTTPException(status_code=503, detail=localized_fallback(response_language))
 
 
+@app.post("/vision/analyze")
+def analyze_attached_images(
+    request: ImageAnalysisRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Analyze private image uploads without retaining their binary contents."""
+    if not vision_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Анализ фото не настроен на сервере. Добавь SWIN_VISION_API_KEY "
+                "в защищённые переменные окружения Render."
+            ),
+        )
+    question = request.question.strip() or "Опиши, что изображено на фотографиях."
+    language = resolve_response_language(question, request.response_language)
+    try:
+        answer = analyze_images(request.images, question, language)
+    except VisionError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+    session_id = request.session_id.strip()
+    saved_question = (
+        f"[Прикреплено изображений: {len(request.images)}] "
+        + (question if request.question.strip() else "Опиши фотографии.")
+    )
+    chat_history.save_turn(int(user["id"]), session_id, saved_question, answer[:120000])
+    return {
+        "answer": answer,
+        "mode": "vision_analysis",
+        "response_language": language,
+        "images_analyzed": len(request.images),
+        "images_stored": False,
+        "vision_model": os.getenv("SWIN_VISION_MODEL", "gpt-5.4-mini"),
+    }
+
+
 @app.get("/capabilities")
 def capabilities():
     return {
@@ -782,6 +892,17 @@ def capabilities():
         ],
         "default_chat_language": "ru",
         "auto_detection": "heuristic",
+        "vision": {
+            "enabled": vision_enabled(),
+            "model": os.getenv("SWIN_VISION_MODEL", "gpt-5.4-mini"),
+            "max_images_per_request": 3,
+            "image_uploads_are_persisted": False,
+        },
+        "knowledge": {
+            "wikipedia_articles": knowledge.wiki_articles,
+            "wikipedia_passages": len(knowledge.wiki_entries),
+            "source": "FineWiki / Wikipedia, CC BY-SA 4.0",
+        },
         "code_languages": [
             {"code": code, "label": label}
             for code, label in CODE_LANGUAGES.items()
