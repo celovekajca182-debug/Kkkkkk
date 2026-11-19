@@ -24,6 +24,11 @@ class KnowledgeBaseTests(unittest.TestCase):
         result = self.base.search("погода на Марсе завтра")
         self.assertIsNone(result)
 
+    def test_curated_dialogue_is_available_for_inference(self):
+        result = self.base.search("Что такое токенизатор SWIN ByteTokenizer?")
+        self.assertIsNotNone(result)
+        self.assertIn("UTF-8", result["answer"])
+
     def test_knowledge_base_is_populated(self):
         self.assertGreaterEqual(self.base.size, 10)
 
