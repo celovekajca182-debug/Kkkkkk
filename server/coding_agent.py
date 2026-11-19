@@ -745,7 +745,7 @@ def run_code_assist(
 
     # For a close match, prefer a curated implementation over free-form
     # generation from the current small checkpoint.
-    if examples and examples[0]["score"] >= 0.68:
+    if examples and examples[0]["score"] >= 0.68 and text_generator is None:
         code = _example_code(str(examples[0]["answer"]))
         validation = validate_code(code, language)
         activity.append({
