@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from transformer import ByteTokenizer, SWINTransformer, load_transformer, save_transformer
+from transformer import CharTokenizer, SWINTransformer, load_transformer, save_transformer
 
 
 def read_instruction_file(path: Path) -> list[str]:
@@ -70,15 +70,23 @@ def build_instruction_corpus(
     return join_corpus(*pieces)
 
 
-def build_tensor_splits(train_corpus: str, validation_corpus: str, block_size: int):
-    train_encoded = ByteTokenizer.encode(train_corpus)
+def build_tensor_splits(
+    train_corpus: str,
+    validation_corpus: str,
+    block_size: int,
+    tokenizer: CharTokenizer | None = None,
+):
+    if tokenizer is None:
+        tokenizer = CharTokenizer.from_texts([train_corpus, validation_corpus])
+
+    train_encoded = tokenizer.encode(train_corpus)
     if len(train_encoded) < block_size * 4:
         raise ValueError("Корпус этапа обучения слишком мал. Добавь больше проверенных данных.")
     if len(set(train_encoded)) < 20:
-        raise ValueError("В корпусе слишком мало разных байтов.")
+        raise ValueError("В корпусе слишком мало разных символов.")
 
     if validation_corpus.strip():
-        validation_encoded = ByteTokenizer.encode(validation_corpus)
+        validation_encoded = tokenizer.encode(validation_corpus)
         if len(validation_encoded) <= block_size + 1:
             raise ValueError("Отложенный validation-корпус слишком мал.")
         train_data = torch.tensor(train_encoded, dtype=torch.long)
@@ -205,19 +213,38 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Устройство обучения: {device}")
 
-    # Этап 1: языковое предобучение на очищенных русских веб-документах.
+    # Подготовить обе стадии заранее, чтобы они использовали один и тот же Unicode-словарь.
     pretrain_train = build_pretraining_corpus(Path(args.data), Path(args.web_train))
     pretrain_validation = (
         Path(args.web_validation).read_text(encoding="utf-8")
         if Path(args.web_validation).is_file()
         else ""
     )
+    sft_train = build_instruction_corpus(
+        Path(args.knowledge),
+        Path(args.dialogue),
+        Path(args.instructions_train),
+        Path(args.coding_train),
+        Path(args.project_examples),
+    )
+    sft_validation = join_corpus(
+        *read_instruction_file(Path(args.instructions_validation)),
+        *read_instruction_file(Path(args.coding_validation)),
+    )
+
+    tokenizer = CharTokenizer.from_texts(
+        [pretrain_train, pretrain_validation, sft_train, sft_validation],
+        max_vocab=4096,
+    )
+    print(f"Unicode character vocabulary: {tokenizer.vocab_size:,} tokens")
+
+    # Этап 1: языковое предобучение на очищенных русских веб-документах.
     pretrain_train_data, pretrain_val_data = build_tensor_splits(
-        pretrain_train, pretrain_validation, args.block_size
+        pretrain_train, pretrain_validation, args.block_size, tokenizer
     )
     print(
-        f"Этап 1 / pretraining: train={pretrain_train_data.numel():,} байт, "
-        f"validation={pretrain_val_data.numel():,} байт"
+        f"Этап 1 / pretraining: train={pretrain_train_data.numel():,} символов, "
+        f"validation={pretrain_val_data.numel():,} символов"
     )
 
     model = SWINTransformer(
@@ -226,7 +253,9 @@ def main():
         n_heads=args.heads,
         n_layers=args.layers,
         dropout=0.1,
+        vocab_size=tokenizer.vocab_size,
     )
+    model.tokenizer = tokenizer
     model = train_stage(
         model,
         pretrain_train_data,
@@ -239,24 +268,13 @@ def main():
         "PRETRAIN",
     )
 
-    # Этап 2: instruction tuning на парах вопрос/ответ, отдельно от веб-текста.
-    sft_train = build_instruction_corpus(
-        Path(args.knowledge),
-        Path(args.dialogue),
-        Path(args.instructions_train),
-        Path(args.coding_train),
-        Path(args.project_examples),
-    )
-    sft_validation = join_corpus(
-        *read_instruction_file(Path(args.instructions_validation)),
-        *read_instruction_file(Path(args.coding_validation)),
-    )
+    # Этап 2: instruction tuning на парах вопрос/ответ с тем же символьным словарём.
     sft_train_data, sft_val_data = build_tensor_splits(
-        sft_train, sft_validation, args.block_size
+        sft_train, sft_validation, args.block_size, tokenizer
     )
     print(
-        f"Этап 2 / instruction tuning: train={sft_train_data.numel():,} байт, "
-        f"validation={sft_val_data.numel():,} байт"
+        f"Этап 2 / instruction tuning: train={sft_train_data.numel():,} символов, "
+        f"validation={sft_val_data.numel():,} символов"
     )
     model = train_stage(
         model,
