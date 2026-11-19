@@ -5,6 +5,7 @@ from pathlib import Path
 import torch
 
 from transformer import (
+    BPEByteTokenizer,
     ByteTokenizer,
     CharTokenizer,
     SWINTransformer,
@@ -34,6 +35,47 @@ class CharTokenizerTests(unittest.TestCase):
         tokenizer = CharTokenizer.from_texts(["abc"])
         decoded = tokenizer.decode(tokenizer.encode("a🌍"))
         self.assertEqual(decoded, "a�")
+
+
+class ByteBPETokenizerTests(unittest.TestCase):
+    def test_bpe_round_trip_preserves_russian_code_whitespace_and_emoji(self):
+        line = "Функция возвращает результат. def add(a, b): return a + b\n"
+        corpus = (line * 80) + ("Проверяй ошибки и типы данных. " * 80)
+        tokenizer = BPEByteTokenizer.from_texts([corpus], vocab_size=512)
+        sample = "Привет, мир! 🌍\nfunc add(a, b) { return a + b; }\n"
+        self.assertEqual(tokenizer.decode(tokenizer.encode(sample)), sample)
+        self.assertIsNotNone(tokenizer.eos_token_id)
+        self.assertIsNotNone(tokenizer.pad_token_id)
+        self.assertLess(len(tokenizer.encode(line * 20)), len((line * 20).encode("utf-8")))
+
+    def test_bpe_checkpoint_round_trip_preserves_tokenizer_and_logits(self):
+        text = ("Русский язык и Python code sample. " * 120)
+        tokenizer = BPEByteTokenizer.from_texts([text], vocab_size=512)
+        model = SWINTransformer(
+            block_size=48,
+            d_model=32,
+            n_heads=4,
+            n_layers=1,
+            dropout=0.0,
+            vocab_size=tokenizer.vocab_size,
+        )
+        model.tokenizer = tokenizer
+        model.eval()
+        sample_text = "Привет, SWIN!"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "swin-bpe.pt"
+            save_transformer(model, str(path), validation_loss=1.0)
+            loaded = load_transformer(str(path))
+            self.assertIsInstance(loaded.tokenizer, BPEByteTokenizer)
+            self.assertEqual(
+                loaded.tokenizer.decode(loaded.tokenizer.encode(sample_text)),
+                sample_text,
+            )
+            sample = torch.tensor([tokenizer.encode(sample_text)], dtype=torch.long)
+            with torch.no_grad():
+                before, _ = model(sample)
+                after, _ = loaded(sample)
+            self.assertTrue(torch.allclose(before, after, atol=1e-6))
 
 
 class SWINTransformerTests(unittest.TestCase):
