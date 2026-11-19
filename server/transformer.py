@@ -77,7 +77,8 @@ class BPEByteTokenizer:
         self.vocab_size = self._tokenizer.get_vocab_size(with_added_tokens=True)
         self.eos_token_id = self._tokenizer.token_to_id(self.EOS_TOKEN)
         self.pad_token_id = self._tokenizer.token_to_id(self.PAD_TOKEN)
-        if self.eos_token_id is None or self.pad_token_id is None:
+        self.unk_token_id = self._tokenizer.token_to_id(self.UNK_TOKEN)
+        if self.eos_token_id is None or self.pad_token_id is None or self.unk_token_id is None:
             raise ValueError("BPE tokenizer checkpoint не содержит EOS/PAD токены.")
 
     @classmethod
@@ -386,6 +387,10 @@ class SWINTransformer(nn.Module):
                 token_ids,
                 no_repeat_ngram_size,
             )
+            if isinstance(tokenizer, BPEByteTokenizer):
+                next_logits = next_logits.clone()
+                next_logits[tokenizer.pad_token_id] = float("-inf")
+                next_logits[tokenizer.unk_token_id] = float("-inf")
             if temperature <= 0:
                 next_id = int(torch.argmax(next_logits).item())
             else:
