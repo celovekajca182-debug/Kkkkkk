@@ -1,6 +1,7 @@
 # Google Colab / CUDA QLoRA training dependencies.
 # Qwen3 requires Transformers >= 4.51.0.
-torch>=2.4.0
+# Keep the CUDA-enabled PyTorch already provided by Google Colab.
+# For a local GPU, install the matching PyTorch CUDA wheel before this file.
 transformers>=4.51.0,<5.0.0
 peft>=0.15.0
 accelerate>=1.6.0
