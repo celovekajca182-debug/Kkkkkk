@@ -173,6 +173,257 @@ USER PROJECT BRIEF:
 """
 
 
+
+def generate_local_project_scaffold(
+    task: str,
+    language: str = "auto",
+    max_files: int = 12,
+) -> dict[str, Any]:
+    """Create a deterministic provider-free starter project from SWIN templates."""
+    task_text = str(task or "").strip()
+    if len(task_text) < 10:
+        raise ProjectBundleError("Опиши назначение проекта подробнее.")
+    if len(task_text) > 12000:
+        raise ProjectBundleError("Описание проекта слишком длинное.")
+    limit = max(1, min(int(max_files), MAX_PROJECT_FILES))
+    requested = str(language or "auto").strip().lower()
+    if requested in {"auto", ""}:
+        lowered = task_text.casefold()
+        if any(token in lowered for token in ("godot", "gdscript", "игр", "сцен", "node2d", "node3d")):
+            requested = "gdscript"
+        elif any(token in lowered for token in ("сайт", "веб", "html", "css", "браузер", "лендинг", "website")):
+            requested = "html"
+        else:
+            requested = "python"
+    try:
+        requested = normalize_language(requested)
+    except Exception:
+        requested = "other"
+
+    if requested == "gdscript":
+        project_name = "SWIN Godot 4 Starter"
+        raw_files = [
+            ("project.godot", "other", "Настройки Godot 4",
+             """; Engine configuration file.
+; SWIN local starter template for Godot 4.
+config_version=5
+
+[application]
+config/name="SWIN Godot Starter"
+run/main_scene="res://scenes/main.tscn"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+"""),
+            ("scenes/main.tscn", "other", "Главная сцена",
+             """[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+"""),
+            ("scripts/main.gd", "gdscript", "Точка входа GDScript",
+             """extends Node2D
+
+func _ready() -> void:
+    var title := Label.new()
+    title.text = "SWIN Godot 4 Starter"
+    title.position = Vector2(32, 32)
+    add_child(title)
+"""),
+            ("README.md", "other", "Инструкция запуска",
+             """# SWIN Godot 4 Starter
+
+This is a local Godot 4 starter scaffold generated from SWIN's built-in templates.
+
+## Open
+1. Open Godot 4.
+2. Import this folder by selecting project.godot.
+3. Press F6 or F5 to run the main scene.
+
+## Scope
+This scaffold contains a project configuration, one main scene and one GDScript entry point.
+It does not implement gameplay features from the original brief; add them in the scripts and scenes folders.
+"""),
+        ]
+    elif requested == "html":
+        project_name = "SWIN Web Starter"
+        raw_files = [
+            ("index.html", "html", "Стартовая страница",
+             """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Локальный стартовый проект SWIN">
+  <title>SWIN Web Starter</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="app">
+    <h1>SWIN Web Starter</h1>
+    <p id="status">Проект готов к настройке.</p>
+    <button id="action" type="button">Проверить работу</button>
+  </main>
+</body>
+</html>
+"""),
+            ("styles.css", "css", "Оформление",
+             """* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #101827;
+  color: #eef2ff;
+  font-family: system-ui, sans-serif;
+}
+.app {
+  width: min(92vw, 720px);
+  padding: 32px;
+  border: 1px solid #34445d;
+  border-radius: 20px;
+  background: #192538;
+}
+button {
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: #7c9cff;
+  color: #101827;
+  font: inherit;
+  cursor: pointer;
+}
+"""),
+            ("app.js", "javascript", "Логика интерфейса",
+             """const action = document.querySelector("#action");
+const status = document.querySelector("#status");
+
+action?.addEventListener("click", () => {
+  if (status) status.textContent = "JavaScript работает. Добавьте свою логику.";
+});
+"""),
+            ("README.md", "other", "Инструкция",
+             """# SWIN Web Starter
+
+Open index.html in a browser. No build system or remote API is required.
+The template contains HTML, CSS and JavaScript only.
+
+The requested product-specific features have not been implemented yet.
+"""),
+        ]
+    else:
+        project_name = "SWIN Python Starter"
+        raw_files = [
+            ("main.py", "python", "Точка входа",
+             """from src.app import main
+
+
+if __name__ == "__main__":
+    main()
+"""),
+            ("src/__init__.py", "python", "Пакет приложения", ""),
+            ("src/app.py", "python", "Основная логика приложения",
+             """def run() -> str:
+    return "SWIN Python Starter is ready."
+
+
+def main() -> None:
+    print(run())
+"""),
+            ("tests/test_app.py", "python", "Базовый тест",
+             """from src.app import run
+
+
+def test_run_returns_start_message() -> None:
+    assert "ready" in run().lower()
+"""),
+            ("pyproject.toml", "toml", "Конфигурация Python",
+             """[project]
+name = "swin-python-starter"
+version = "0.1.0"
+description = "Local starter project created by SWIN"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+"""),
+            ("README.md", "other", "Инструкция",
+             """# SWIN Python Starter
+
+Run with Python 3.10 or newer using: python main.py
+
+Tests: install pytest separately, then run python -m pytest.
+
+This is a starter scaffold. It does not implement all product-specific requirements in the original brief.
+"""),
+        ]
+
+    if len(raw_files) > limit:
+        raise ProjectBundleError(
+            f"Для этого шаблона нужно не менее {len(raw_files)} файлов; увеличь лимит."
+        )
+    seen = set()
+    files: list[dict[str, Any]] = []
+    total = 0
+    failed = 0
+    for raw_path, raw_language, purpose, content in raw_files:
+        safe_path = _safe_relative_path(raw_path)
+        if safe_path.casefold() in seen:
+            raise ProjectBundleError(f"Повторяется путь файла: {safe_path}")
+        seen.add(safe_path.casefold())
+        total += len(content)
+        if len(content) > MAX_FILE_CHARS or total > MAX_PROJECT_CHARS:
+            raise ProjectBundleError("Встроенный шаблон превышает лимит рабочего пространства.")
+        language_id = _language_for_path(safe_path, raw_language)
+        validation = validate_code(content, language_id) if content.strip() else {
+            "status": "passed",
+            "method": "empty_package_file",
+            "message": "Пустой package marker.",
+        }
+        if validation.get("status") == "failed":
+            failed += 1
+        files.append({
+            "path": safe_path,
+            "language": language_id,
+            "purpose": purpose,
+            "content": content,
+            "validation": validation,
+        })
+
+    return {
+        "status": "starter_scaffold",
+        "scope": "template_only",
+        "project_name": project_name,
+        "summary": (
+            f"Создан локальный стартовый проект {project_name}: {len(files)} файлов. "
+            "Это структура и базовый пример, а не реализация всех функций из запроса."
+        ),
+        "limitations": [
+            "Шаблон создан локально без сторонних LLM или сетевых API.",
+            "Функции из исходного запроса не реализуются автоматически этим шаблоном.",
+            "Доступная статическая проверка выполнена; проект не запускался.",
+        ],
+        "files": files,
+        "file_count": len(files),
+        "total_characters": total,
+        "validation": {
+            "status": "needs_review" if failed else "passed_or_limited",
+            "failed_files": failed,
+            "message": "Статическая проверка доступных файлов выполнена; runtime не запускался.",
+        },
+        "runtime_tests": {
+            "status": "not_run",
+            "message": "Проект не запускался и runtime-тесты не выполнялись.",
+        },
+    }
+
+
 def generate_project_bundle(
     task: str,
     language: str,
