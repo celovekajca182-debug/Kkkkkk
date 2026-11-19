@@ -8,7 +8,9 @@ from prepare_corpus import (
     load_finewiki_documents,
     load_classic_documents,
     labels_have_rejection,
+    normalize_oasst_language,
     russian_letter_ratio,
+    script_letter_ratio,
     split_items,
 )
 
@@ -81,6 +83,39 @@ class CorpusPreparationTests(unittest.TestCase):
         self.assertEqual(len(pairs), 1)
         self.assertIn("Godot", pairs[0]["question"])
         self.assertIn("CharacterBody2D", pairs[0]["answer"])
+
+    def test_oasst_pairs_retain_language_and_balance_available_languages(self):
+        rows = [
+            row("q_ru", None, "prompter", "Как создать функцию в Python?", lang="ru"),
+            row("a_ru", "q_ru", "assistant", "Функция принимает данные и возвращает результат.", lang="ru"),
+            row("q_en", None, "prompter", "How do I create a Python function?", lang="en"),
+            row("a_en", "q_en", "assistant", "A function receives values and returns a result.", lang="en"),
+            row("q_uk", None, "prompter", "Як створити функцію у Python?", lang="uk"),
+            row("a_uk", "q_uk", "assistant", "Функція приймає значення та повертає результат.", lang="uk"),
+            row("q_pt", None, "prompter", "Como criar uma função em Python?", lang="pt-BR"),
+            row("a_pt", "q_pt", "assistant", "Uma função recebe valores e retorna um resultado.", lang="pt-BR"),
+            row("q_it", None, "prompter", "Come creare una funzione Python?", lang="it"),
+            row("a_it", "q_it", "assistant", "Una funzione riceve valori e restituisce un risultato.", lang="it"),
+            row("q_ja", None, "prompter", "Pythonで関数を作成するにはどうすればよいですか？", lang="ja"),
+            row("a_ja", "q_ja", "assistant", "関数は値を受け取り、処理して結果を返します。", lang="ja"),
+        ]
+        pairs = extract_oasst_pairs(rows, max_pairs=20, seed=7)
+        language_codes = {pair["language"] for pair in pairs}
+        self.assertEqual(language_codes, {"ru", "en", "uk", "pt", "it", "ja"})
+        self.assertTrue(all(pair["language"] for pair in pairs))
+
+    def test_language_codes_normalize_regional_tags(self):
+        self.assertEqual(normalize_oasst_language("pt-BR"), "pt")
+        self.assertEqual(normalize_oasst_language("zh"), "zh")
+        self.assertEqual(normalize_oasst_language("ja"), "ja")
+        self.assertEqual(normalize_oasst_language("unknown"), "")
+
+    def test_japanese_script_ratio_counts_kana_and_kanji(self):
+        self.assertGreater(
+            script_letter_ratio("日本語の文章です。ひらがなとカタカナも含みます。", "ja"),
+            0.8,
+        )
+        self.assertLess(script_letter_ratio("Mostly English documentation", "ja"), 0.1)
 
     def test_finewiki_stream_keeps_russian_articles_and_splits_validation(self):
         class FakeStream(list):
