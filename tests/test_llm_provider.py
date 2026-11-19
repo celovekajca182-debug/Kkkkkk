@@ -24,6 +24,39 @@ class LlmProviderTests(unittest.TestCase):
         with patch.object(llm_provider, "BASE_URL", ""):
             self.assertFalse(llm_provider.provider_configured())
 
+    def test_hugging_face_router_requires_a_server_token(self):
+        with (
+            patch.object(llm_provider, "BASE_URL", "https://router.huggingface.co/v1"),
+            patch.object(llm_provider, "API_KEY", ""),
+            patch.object(llm_provider, "CHAT_BASE_URL", ""),
+            patch.object(llm_provider, "CODE_BASE_URL", ""),
+        ):
+            self.assertFalse(llm_provider.provider_configured("chat"))
+            self.assertFalse(llm_provider.provider_configured("code"))
+            self.assertFalse(llm_provider.provider_configured())
+            with self.assertRaisesRegex(RuntimeError, "token is missing"):
+                llm_provider.generate_model_text("hello", role="chat")
+
+    def test_shared_hugging_face_token_enables_both_model_roles(self):
+        with (
+            patch.object(llm_provider, "BASE_URL", "https://router.huggingface.co/v1"),
+            patch.object(llm_provider, "API_KEY", "hf-test-token"),
+            patch.object(llm_provider, "CHAT_BASE_URL", ""),
+            patch.object(llm_provider, "CODE_BASE_URL", ""),
+        ):
+            self.assertTrue(llm_provider.provider_configured("chat"))
+            self.assertTrue(llm_provider.provider_configured("code"))
+
+    def test_self_hosted_endpoint_can_be_configured_without_a_key(self):
+        with (
+            patch.object(llm_provider, "BASE_URL", "https://inference.example/v1"),
+            patch.object(llm_provider, "API_KEY", ""),
+            patch.object(llm_provider, "CHAT_BASE_URL", ""),
+            patch.object(llm_provider, "CODE_BASE_URL", ""),
+        ):
+            self.assertTrue(llm_provider.provider_configured("chat"))
+            self.assertTrue(llm_provider.provider_configured("code"))
+
     def test_model_roles_are_separate(self):
         self.assertEqual(
             llm_provider.model_for_role("chat"),

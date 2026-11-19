@@ -10,6 +10,7 @@ import os
 import urllib.error
 import urllib.request
 from typing import Literal
+from urllib.parse import urlsplit
 
 CHAT_MODEL = os.getenv(
     "SWIN_CHAT_MODEL", "Qwen/Qwen3-4B-Thinking-2507"
@@ -49,11 +50,27 @@ def _api_key_for_role(role: Literal["chat", "code"]) -> str:
     raise ValueError("Unknown SWIN model role.")
 
 
+def _requires_bearer_key(base_url: str) -> bool:
+    """Hugging Face's router requires a fine-grained token; self-hosted gateways may not."""
+    try:
+        return (urlsplit(base_url).hostname or "").lower() == "router.huggingface.co"
+    except ValueError:
+        return False
+
+
 def provider_configured(role: Literal["chat", "code"] | None = None) -> bool:
-    """Return whether the shared endpoint or the selected role endpoint is set."""
+    """Return whether a role has a usable endpoint and any mandatory credentials."""
+    def role_ready(selected_role: Literal["chat", "code"]) -> bool:
+        base_url = _base_url_for_role(selected_role)
+        if not base_url:
+            return False
+        if _requires_bearer_key(base_url) and not _api_key_for_role(selected_role):
+            return False
+        return True
+
     if role is None:
-        return bool(_base_url_for_role("chat") or _base_url_for_role("code"))
-    return bool(_base_url_for_role(role))
+        return role_ready("chat") or role_ready("code")
+    return role_ready(role)
 
 
 def model_for_role(role: Literal["chat", "code"]) -> str:
@@ -97,6 +114,9 @@ def generate_model_text(
     base_url = _base_url_for_role(role)
     if not base_url:
         raise RuntimeError(f"SWIN {role} inference endpoint is not configured.")
+    api_key = _api_key_for_role(role)
+    if _requires_bearer_key(base_url) and not api_key:
+        raise RuntimeError("SWIN Hugging Face inference token is missing on the server.")
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("Prompt must not be empty.")
 
@@ -109,7 +129,6 @@ def generate_model_text(
         "stream": False,
     }
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
-    api_key = _api_key_for_role(role)
     if api_key:
         headers["Authorization"] = "Bearer " + api_key
 
