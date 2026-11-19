@@ -468,12 +468,99 @@ def validate_code(code: str, language: str) -> dict[str, Any]:
     return {"status": "limited", "method": "none", "message": "Для выбранного формата доступна только ограниченная проверка."}
 
 
+def _example_tokens(text: str) -> set[str]:
+    stop = {
+        "как", "что", "это", "для", "при", "или", "если", "можно", "нужно",
+        "сделать", "создать", "написать", "простой", "простая", "простое",
+        "в", "на", "из", "по", "с", "и", "the", "how", "to", "a", "an",
+    }
+    return {
+        token for token in re.findall(r"[a-zа-яё0-9_+#.]+", text.lower())
+        if len(token) > 1 and token not in stop
+    }
+
+
+def retrieve_coding_examples(
+    task: str,
+    language: str,
+    examples_path: str | None = None,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    """Retrieve curated code examples using lexical coverage and language match."""
+    path = examples_path or os.getenv("SWIN_CODING_EXAMPLES_PATH")
+    if path is None:
+        path = os.path.join(os.path.dirname(__file__), "data", "coding_dialogue.jsonl")
+    if not os.path.isfile(path):
+        return []
+
+    requested_language = normalize_language(language)
+    query_tokens = _example_tokens(task)
+    if not query_tokens:
+        return []
+
+    ranked: list[dict[str, Any]] = []
+    try:
+        with open(path, "r", encoding="utf-8") as source:
+            for line_number, line in enumerate(source, 1):
+                if not line.strip():
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                question = str(item.get("question", "")).strip()
+                answer = str(item.get("answer", "")).strip()
+                if not question or not answer:
+                    continue
+                example_language = detect_language(question, "auto")
+                if requested_language != "other" and example_language != requested_language:
+                    continue
+
+                example_tokens = _example_tokens(question)
+                intersection = query_tokens.intersection(example_tokens)
+                if not intersection:
+                    continue
+                coverage = len(intersection) / len(query_tokens)
+                union_score = len(intersection) / max(1, len(query_tokens.union(example_tokens)))
+                # Query coverage gives weight to a narrow, well-matched request;
+                # Jaccard prevents a single generic word from dominating.
+                score = 0.75 * coverage + 0.25 * union_score
+                ranked.append({
+                    "question": question,
+                    "answer": answer,
+                    "score": round(score, 4),
+                    "language": example_language,
+                    "line": line_number,
+                })
+    except OSError:
+        return []
+
+    ranked.sort(key=lambda item: item["score"], reverse=True)
+    return ranked[:max(1, min(int(limit), 5))]
+
+
+def _example_code(answer: str) -> str:
+    value = answer.strip()
+    fence = chr(96) * 3
+    match = re.search(
+        re.escape(fence) + r"(?:[a-zA-Z0-9_+.#-]+)?\s*\n(.*?)" + re.escape(fence),
+        value,
+        flags=re.DOTALL,
+    )
+    if match:
+        return match.group(1).strip()
+    # Curated coding examples use a code-first answer followed by a blank line
+    # and a short implementation note.
+    return value.split("\n\n", 1)[0].strip()
+
+
 def _make_prompt(
     task: str,
     language: str,
     sources: list[dict[str, str]],
     project_context: str,
     block_size: int,
+    examples: list[dict[str, Any]] | None = None,
 ) -> str:
     """Preserve the task tail and final code marker within the model context."""
     byte_limit = max(64, block_size - 4)
@@ -508,6 +595,10 @@ def _make_prompt(
         snippet = re.sub(r"\s+", " ", source.get("snippet", "")).strip()
         if snippet:
             optional_lines.append("Справка: " + snippet[:260])
+    for example in (examples or [])[:1]:
+        snippet = re.sub(r"\s+", " ", _example_code(str(example.get("answer", "")))).strip()
+        if snippet:
+            optional_lines.append("Проверенный пример для ориентира: " + snippet[:150])
     prompt = prefix
     for line in optional_lines:
         candidate = prompt + line + "\n" + task_label + task_text + suffix
@@ -536,6 +627,12 @@ def run_code_assist(
 
     language = detect_language(normalized_task, language)
     activity = [{"stage": "requirements", "status": "done", "label": "Требования определены"}]
+    examples = retrieve_coding_examples(normalized_task, language)
+    activity.append({
+        "stage": "retrieval",
+        "status": "done" if examples else "no_match",
+        "label": f"Локальная библиотека проверенных примеров: {len(examples)} совпадений",
+    })
     sources = search_documentation(normalized_task, language) if research_web else []
     activity.append({
         "stage": "research",
@@ -553,6 +650,52 @@ def run_code_assist(
         "scope": "broad_public_web",
         "message": "Найдены веб-источники; это не гарантия полноты или достоверности каждой страницы." if sources else "Веб-источники не получены.",
     }
+
+    # For a close match, prefer a curated implementation over free-form
+    # generation from the current small checkpoint.
+    if examples and examples[0]["score"] >= 0.68:
+        code = _example_code(str(examples[0]["answer"]))
+        validation = validate_code(code, language)
+        activity.append({
+            "stage": "retrieval",
+            "status": "done",
+            "label": "Использован близкий пример из локальной библиотеки",
+        })
+        warnings = [
+            "Это близкий готовый пример, а не полностью адаптированная реализация всего проекта.",
+            "Сверь пути узлов, версии библиотек и входные данные со своим проектом.",
+            "Синтаксическая проверка не доказывает правильность алгоритма и не заменяет тесты проекта.",
+        ]
+        if validation["status"] != "passed":
+            warnings.append("Автоматическая проверка ограничена или не пройдена; код требует ручной проверки.")
+        result = {
+            "status": "retrieved_example",
+            "language": language,
+            "summary": "Найден близкий пример в локальной библиотеке и выполнена доступная проверка.",
+            "code": code,
+            "validation": validation,
+            "verification": {
+                "research": research_check,
+                "syntax": validation,
+                "runtime_tests": {
+                    "status": "not_run",
+                    "message": "Код не исполнялся на сервере.",
+                },
+                "cross_check": {
+                    "status": "local_example",
+                    "message": "Решение основано на локальном примере: " + examples[0]["question"],
+                },
+            },
+            "plan": plan,
+            "references": sources,
+            "matched_examples": [
+                {"question": examples[0]["question"], "score": examples[0]["score"]}
+            ],
+            "warnings": warnings,
+        }
+        if show_activity:
+            result["activity"] = activity
+        return result
 
     if transformer_model is None:
         result = {
@@ -576,7 +719,7 @@ def run_code_assist(
 
     activity.append({"stage": "planning", "status": "done", "label": "Требования и справочные источники подготовлены"})
     block_size = int(getattr(transformer_model, "block_size", 256))
-    prompt = _make_prompt(normalized_task, language, sources, project_context, block_size)
+    prompt = _make_prompt(normalized_task, language, sources, project_context, block_size, examples)
     try:
         raw = transformer_model.generate(
             prompt, max_new_tokens=900, temperature=0.12, top_k=12, stop_at_newline=False
@@ -668,6 +811,10 @@ def run_code_assist(
         "verification": verification,
         "plan": plan,
         "references": sources,
+        "matched_examples": [
+            {"question": item["question"], "score": item["score"]}
+            for item in examples
+        ],
         "warnings": warnings,
     }
     if show_activity:
