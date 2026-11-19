@@ -326,9 +326,9 @@ class CausalPaddingCollator:
 
 def main():
     parser = argparse.ArgumentParser(description="QLoRA fine-tuning for advanced mathematics and programming.")
-    parser.add_argument("--base-model", default="Qwen/Qwen3-1.7B")
+    parser.add_argument("--base-model", default="Qwen/Qwen3-4B-Thinking-2507")
     parser.add_argument("--data-dir", default="data")
-    parser.add_argument("--output-dir", default="models/swin-qwen3-1.7b-qlora")
+    parser.add_argument("--output-dir", default="models/swin-qwen3-4b-thinking-qlora")
     parser.add_argument("--max-numina", type=int, default=5000)
     parser.add_argument("--max-opencode-train", type=int, default=3000)
     parser.add_argument("--max-opencode-validation", type=int, default=300)
