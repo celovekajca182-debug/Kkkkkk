@@ -1304,7 +1304,7 @@ class MainActivity : Activity() {
         }
         panel.addView(taskInput, LinearLayout.LayoutParams(-1, chatDp(150)))
         panel.addView(makeText(
-            "SWIN создаст до 12 исходных файлов, проверит безопасные пути и доступный синтаксис. Запуск проекта не выполняется.",
+            "SWIN создаст локальный стартовый шаблон Godot 4, Python или Web (до 12 файлов). Это основа проекта, а не готовая реализация всех функций. Никаких внешних AI API.",
             11f,
             chatColor("muted")
         ).apply {
@@ -1322,7 +1322,7 @@ class MainActivity : Activity() {
         }
         panel.addView(spinner, LinearLayout.LayoutParams(-1, chatDp(48)))
         val dialog = dialogBuilder()
-            .setTitle("Генератор полного проекта")
+            .setTitle("Локальный генератор проекта")
             .setView(panel)
             .setNegativeButton("Отмена", null)
             .setPositiveButton("Создать проект", null)
@@ -1349,7 +1349,7 @@ class MainActivity : Activity() {
                     .put("max_files", 12)
                 dialog.dismiss()
                 val progress = ProgressDialog(this).apply {
-                    setMessage("SWIN проектирует файлы и проверяет исходники…")
+                    setMessage("SWIN создаёт локальный шаблон и проверяет исходники…")
                     setCancelable(false)
                     show()
                 }
@@ -1386,11 +1386,16 @@ class MainActivity : Activity() {
                                 progress.dismiss()
                                 val validation = response.optJSONObject("validation")
                                 val warning = validation?.optString("message").orEmpty()
+                                val scope = response.optString("scope", "template_only")
+                                val summary = response.optString("summary", "")
                                 Toast.makeText(
                                     this,
-                                    "Создан проект «${saved.optString("name")}»: ${importFiles.size} файлов. $warning",
+                                    "Создан стартовый проект «${saved.optString("name")}»: ${importFiles.size} файлов. $scope. $warning",
                                     Toast.LENGTH_LONG
                                 ).show()
+                                if (summary.isNotBlank()) {
+                                    appendChatMessage("assistant", summary)
+                                }
                                 showProjectFiles(saved.optString("id"))
                             } catch (error: Exception) {
                                 progress.dismiss()
@@ -3149,6 +3154,20 @@ class MainActivity : Activity() {
         val message = chatInput.text.toString().trim()
         val imagePayloads = pendingImageAttachments.map { it.dataUrl }
         if (message.isEmpty() && imagePayloads.isEmpty()) return
+        if (imagePayloads.isNotEmpty()) {
+            appendChatMessage(
+                "assistant",
+                "Фото пока не анализируются: собственная мультимодальная модель SWIN ещё не готова. " +
+                    "Изображения не отправлены ни на сервер, ни стороннему провайдеру. " +
+                    "Удали вложения кнопкой ×, чтобы отправить обычное сообщение."
+            )
+            Toast.makeText(
+                this,
+                "Локальное распознавание изображений пока не включено.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
         val token = authToken
         if (token.isNullOrBlank()) {
             clearLocalSession("Сначала войди в аккаунт.")
@@ -3226,7 +3245,7 @@ class MainActivity : Activity() {
                     val payload = JSONObject()
                         .put("task", message)
                         .put("language", selectedCodingLanguage)
-                        .put("research_web", true)
+                        .put("research_web", false)
                         .put("show_activity", includeCodingActivity)
                         .put("project_context", selectedProjectContext)
                         .put("session_id", requestSessionId)
