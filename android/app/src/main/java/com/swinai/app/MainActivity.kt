@@ -23,6 +23,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.util.UUID
+import java.security.MessageDigest
 import kotlin.concurrent.thread
 
 private class ApiException(val statusCode: Int, message: String) : Exception(message)
@@ -67,14 +68,35 @@ class MainActivity : Activity() {
         authToken = SecureTokenStore.read(this)
         userEmail = preferences.getString("account_email", "") ?: ""
         if (authToken != null && userEmail.isNotBlank()) {
-            sessionId = preferences.getString("session_id:$userEmail", null)
-                ?: UUID.randomUUID().toString()
-            preferences.edit().putString("session_id:$userEmail", sessionId).apply()
+            sessionId = resolveAccountSessionId(userEmail)
             showChatScreen()
             validateSavedSession()
         } else {
             showAuthScreen()
         }
+    }
+
+    private fun resolveAccountSessionId(email: String): String {
+        val normalizedEmail = email.trim().lowercase()
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(normalizedEmail.toByteArray(Charsets.UTF_8))
+            .take(16)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        val stableSession = "account-$digest"
+        val preferences = getPreferences(MODE_PRIVATE)
+        val oldSession = preferences.getString("session_id:$email", null)
+
+        // Migrate the previous device-specific backup without deleting the old copy.
+        if (!oldSession.isNullOrBlank() && oldSession != stableSession) {
+            val oldBackup = preferences.getString("chat_backup:$email:$oldSession", null)
+            val newBackupKey = "chat_backup:$email:$stableSession"
+            if (!oldBackup.isNullOrBlank() && preferences.getString(newBackupKey, null).isNullOrBlank()) {
+                preferences.edit().putString(newBackupKey, oldBackup).apply()
+            }
+        }
+
+        preferences.edit().putString("session_id:$email", stableSession).apply()
+        return stableSession
     }
 
     private fun darkRoot(): LinearLayout = LinearLayout(this).apply {
@@ -450,12 +472,9 @@ class MainActivity : Activity() {
                         SecureTokenStore.save(this, token)
                         authToken = token
                         userEmail = user.optString("email", email)
-                        sessionId = getPreferences(MODE_PRIVATE)
-                            .getString("session_id:$userEmail", null)
-                            ?: UUID.randomUUID().toString()
+                        sessionId = resolveAccountSessionId(userEmail)
                         getPreferences(MODE_PRIVATE).edit()
                             .putString("account_email", userEmail)
-                            .putString("session_id:$userEmail", sessionId)
                             .apply()
                         showChatScreen()
                     } catch (error: Exception) {
