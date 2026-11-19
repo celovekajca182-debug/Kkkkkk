@@ -16,6 +16,7 @@ on:
     paths:
       - "server/transformer.py"
       - "server/train_transformer.py"
+      - "server/evaluate_transformer.py"
       - "server/prepare_corpus.py"
       - "server/prepare_coding_data.py"
       - "server/data/train.txt"
@@ -24,6 +25,7 @@ on:
       - "server/data/coding_dialogue.jsonl"
       - "server/requirements-transformer.txt"
       - "tests/test_transformer.py"
+      - "tests/test_evaluate_transformer.py"
       - "tests/test_prepare_corpus.py"
       - "tests/test_training_corpus.py"
       - "tests/test_prepare_coding_data.py"
@@ -65,8 +67,8 @@ jobs:
         working-directory: server
         run: |
           python train_transformer.py \
-            --pretrain-epochs ${{ inputs.pretrain_epochs || '10' }} \
-            --sft-epochs ${{ inputs.sft_epochs || '4' }} \
+            --pretrain-epochs ${{ inputs.pretrain_epochs || '12' }} \
+            --sft-epochs ${{ inputs.sft_epochs || '6' }} \
             --block-size 512 \
             --batch-size 12 \
             --d-model 128 \
@@ -74,6 +76,12 @@ jobs:
             --layers 4 \
             --output models/swin-transformer.pt \
             --pretrain-output models/swin-transformer-pretrain.pt
+      - name: Evaluate generated Russian answers and Python code
+        working-directory: server
+        run: |
+          python evaluate_transformer.py \
+            --checkpoint models/swin-transformer.pt \
+            --json-output models/evaluation.json
       - uses: actions/upload-artifact@v4
         with:
           name: swin-ai-transformer-weights
