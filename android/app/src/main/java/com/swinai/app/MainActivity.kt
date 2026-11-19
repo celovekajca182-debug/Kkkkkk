@@ -5,6 +5,11 @@ import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import android.view.ContextThemeWrapper
 import android.content.res.Configuration
 import android.content.res.ColorStateList
@@ -27,6 +32,11 @@ import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.io.ByteArrayOutputStream
+import java.io.ByteArrayInputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 import java.security.MessageDigest
 import kotlin.concurrent.thread
 
@@ -50,6 +60,14 @@ class MainActivity : Activity() {
     private lateinit var activitySwitch: Switch
     private lateinit var projectContextInput: EditText
     private lateinit var copyCodeButton: Button
+    private lateinit var attachmentPreview: LinearLayout
+    private val pendingImageAttachments = mutableListOf<ChatImageAttachment>()
+    private var pendingProjectExportId: String? = null
+    private data class ChatImageAttachment(
+        val dataUrl: String,
+        val thumbnail: Bitmap,
+        val displayName: String
+    )
     private var welcomePanel: View? = null
     private var codeModeHeader: TextView? = null
     private var memoryDialog: AlertDialog? = null
@@ -64,6 +82,23 @@ class MainActivity : Activity() {
     private var endpointValue: String = ""
     private var themeMode: String = "system"
     private var responseLanguage: String = "ru"
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != Activity.RESULT_OK || data == null) return
+        when (requestCode) {
+            REQUEST_PICK_IMAGES -> handlePickedImages(data)
+            REQUEST_IMPORT_PROJECT -> data.data?.let { importWorkspaceArchive(it) }
+            REQUEST_EXPORT_PROJECT -> {
+                val target = data.data
+                val projectId = pendingProjectExportId
+                pendingProjectExportId = null
+                if (target != null && !projectId.isNullOrBlank()) {
+                    exportWorkspaceArchive(projectId, target)
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -2255,16 +2290,17 @@ class MainActivity : Activity() {
                     .setTitle("Дополнительные действия")
                     .setItems(arrayOf("История чатов", "Новый чат", "Рабочее пространство", "Режим программирования", "Память SWIN", "Язык ответа")) { _, which ->
                         when (which) {
-                            0 -> showChatHistory()
-                            1 -> createNewChat()
-                            2 -> showWorkspace()
-                            3 -> {
+                            0 -> openPhotoPicker()
+                            1 -> showChatHistory()
+                            2 -> createNewChat()
+                            3 -> showWorkspace()
+                            4 -> {
                                 isCodeMode = !isCodeMode
                                 updateCodingControls()
                                 codeMode.text = if (isCodeMode) "Код ✓" else "Код"
                             }
-                            4 -> showMemorySettings()
-                            5 -> showResponseLanguageSettings()
+                            5 -> showMemorySettings()
+                            6 -> showResponseLanguageSettings()
                         }
                     }
                     .show()
@@ -2289,6 +2325,20 @@ class MainActivity : Activity() {
             minHeight = chatDp(46)
             stateListAnimator = null
         }
+        attachmentPreview = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setPadding(chatDp(4), chatDp(5), chatDp(4), chatDp(5))
+        }
+        val attachmentScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            visibility = View.GONE
+            addView(attachmentPreview, ViewGroup.LayoutParams(-2, -2))
+        }
+        root.addView(attachmentScroll, LinearLayout.LayoutParams(-1, chatDp(76)).apply {
+            topMargin = chatDp(3)
+        })
         composer.addView(plus, LinearLayout.LayoutParams(chatDp(36), chatDp(46)))
         composer.addView(chatInput, LinearLayout.LayoutParams(0, -2, 1f))
         composer.addView(sendButton, LinearLayout.LayoutParams(chatDp(46), chatDp(46)))
@@ -2299,6 +2349,150 @@ class MainActivity : Activity() {
         updateCodingControls()
         setContentView(root)
         loadChatHistory()
+    }
+
+    private fun openPhotoPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(intent, REQUEST_PICK_IMAGES)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Не удалось открыть галерею.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun handlePickedImages(data: Intent) {
+        val uris = mutableListOf<Uri>()
+        val clip = data.clipData
+        if (clip != null) {
+            for (index in 0 until minOf(clip.itemCount, 3)) {
+                clip.getItemAt(index).uri?.let { uris.add(it) }
+            }
+        } else {
+            data.data?.let { uris.add(it) }
+        }
+        val remaining = (3 - pendingImageAttachments.size).coerceAtLeast(0)
+        if (remaining == 0) {
+            Toast.makeText(this, "За одно сообщение можно прикрепить до трёх фото.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val selected = uris.distinct().take(remaining)
+        if (selected.isEmpty()) return
+        Toast.makeText(this, "Подготавливаю изображения…", Toast.LENGTH_SHORT).show()
+        thread {
+            val loaded = mutableListOf<ChatImageAttachment>()
+            val failures = mutableListOf<String>()
+            for (uri in selected) {
+                try {
+                    loaded.add(readImageAttachment(uri))
+                } catch (error: Exception) {
+                    failures.add(error.message ?: "неизвестная ошибка")
+                }
+            }
+            runOnUiThread {
+                pendingImageAttachments.addAll(loaded)
+                renderImageAttachments()
+                if (loaded.isNotEmpty()) {
+                    Toast.makeText(this, "Фото прикреплено: ${loaded.size}", Toast.LENGTH_SHORT).show()
+                }
+                if (failures.isNotEmpty()) {
+                    Toast.makeText(this, "Некоторые фото не удалось прочитать: ${failures.first()}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun readImageAttachment(uri: Uri): ChatImageAttachment {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        } ?: throw IllegalArgumentException("Не удалось открыть файл.")
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw IllegalArgumentException("Файл не является изображением.")
+        }
+        var sample = 1
+        while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) {
+            sample *= 2
+        }
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        val decoded = contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, options)
+        } ?: throw IllegalArgumentException("Не удалось декодировать изображение.")
+        val scaled = if (decoded.width > 2048 || decoded.height > 2048) {
+            val ratio = minOf(2048f / decoded.width, 2048f / decoded.height)
+            Bitmap.createScaledBitmap(
+                decoded,
+                (decoded.width * ratio).toInt().coerceAtLeast(1),
+                (decoded.height * ratio).toInt().coerceAtLeast(1),
+                true
+            ).also { if (it !== decoded) decoded.recycle() }
+        } else decoded
+
+        val output = ByteArrayOutputStream()
+        var quality = 86
+        do {
+            output.reset()
+            scaled.compress(Bitmap.CompressFormat.JPEG, quality, output)
+            quality -= 8
+        } while (output.size() > 3_500_000 && quality >= 54)
+        if (output.size() > 4_000_000) {
+            scaled.recycle()
+            throw IllegalArgumentException("Изображение больше 4 МБ после сжатия.")
+        }
+        val bytes = output.toByteArray()
+        val thumbnailScale = minOf(112f / scaled.width, 112f / scaled.height, 1f)
+        val thumbnail = Bitmap.createScaledBitmap(
+            scaled,
+            (scaled.width * thumbnailScale).toInt().coerceAtLeast(1),
+            (scaled.height * thumbnailScale).toInt().coerceAtLeast(1),
+            true
+        )
+        if (thumbnail !== scaled) scaled.recycle()
+        val name = uri.lastPathSegment?.substringAfterLast('/')?.take(48) ?: "Фото"
+        return ChatImageAttachment(
+            "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP),
+            thumbnail,
+            name
+        )
+    }
+
+    private fun renderImageAttachments() {
+        if (!::attachmentPreview.isInitialized) return
+        attachmentPreview.removeAllViews()
+        attachmentPreview.visibility = if (pendingImageAttachments.isEmpty()) View.GONE else View.VISIBLE
+        for ((index, attachment) in pendingImageAttachments.withIndex()) {
+            val chip = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(chatDp(5), chatDp(4), chatDp(7), chatDp(4))
+                background = chatBg(chatColor("codePill"), 10, chatColor("stroke"))
+            }
+            chip.addView(ImageView(this).apply {
+                setImageBitmap(attachment.thumbnail)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = attachment.displayName
+            }, LinearLayout.LayoutParams(chatDp(52), chatDp(52)))
+            chip.addView(makeText("Фото ${index + 1}", 11f, chatColor("ink")).apply {
+                setPadding(chatDp(6), 0, chatDp(4), 0)
+            })
+            chip.addView(TextView(this).apply {
+                text = "×"
+                textSize = 19f
+                gravity = Gravity.CENTER
+                setTextColor(chatColor("muted"))
+                setOnClickListener {
+                    pendingImageAttachments.removeAt(index).thumbnail.recycle()
+                    renderImageAttachments()
+                }
+            }, LinearLayout.LayoutParams(chatDp(24), chatDp(40)))
+            attachmentPreview.addView(chip, LinearLayout.LayoutParams(-2, -2).apply {
+                marginEnd = chatDp(7)
+            })
+        }
     }
 
     private fun activeSessionPreferenceKey(): String =
