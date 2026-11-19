@@ -4,3 +4,4 @@ numpy==2.2.1
 pydantic==2.10.4
 pwdlib[argon2]==0.2.1
 ddgs>=9,<10
+psycopg[binary]>=3.2,<4
