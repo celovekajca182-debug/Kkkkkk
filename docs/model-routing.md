@@ -9,6 +9,8 @@ SWIN uses two independent model roles:
 
 The model IDs are configurable; no model weights are bundled into the Android APK or the lightweight FastAPI service.
 
+The selected Hugging Face cards identify both defaults as Apache-2.0: Qwen3-4B-Instruct-2507 is a 4B non-thinking instruction model, while Qwen2.5-Coder-7B-Instruct has 7.61B parameters and a 32K native context (the card documents YaRN extension for longer contexts).
+
 ## Runtime architecture
 
 ```text
