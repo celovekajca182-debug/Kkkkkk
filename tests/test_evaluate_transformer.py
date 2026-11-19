@@ -97,7 +97,7 @@ class EvaluateTransformerTests(unittest.TestCase):
         self.assertTrue(report["accepted"])
         self.assertEqual(report["passed_text_probes"], 11)
         self.assertEqual(report["total_text_probes"], 11)
-        self.assertEqual(len(report["passed_languages"]), 10)
+        self.assertEqual(len(set(report["passed_languages"])), 10)
         self.assertFalse(report["failed_languages"])
         self.assertTrue(report["python_code_probe_passed"])
 
