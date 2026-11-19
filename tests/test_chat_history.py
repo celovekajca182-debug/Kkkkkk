@@ -33,6 +33,24 @@ class ChatHistoryStoreTests(unittest.TestCase):
             self.assertEqual(messages[0]["content"], "Вопрос 5")
             self.assertEqual(messages[-1]["content"], "Ответ 14")
 
+    def test_sessions_are_recent_first_with_title_preview_and_account_isolation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ChatHistoryStore(Path(directory) / "history.sqlite3")
+            store.save_turn(1, "chat-old", "Старый вопрос", "Старый ответ")
+            store.save_turn(1, "chat-new", "Новый диалог о Python", "Разберём задачу.")
+            store.save_turn(1, "chat-old", "Продолжение старого чата", "Последний ответ старого чата.")
+            store.save_turn(2, "chat-private", "Чужой диалог", "Чужой ответ")
+
+            sessions = store.sessions(1, limit=10)
+            self.assertEqual([item["session_id"] for item in sessions], ["chat-old", "chat-new"])
+            self.assertEqual(sessions[0]["title"], "Старый вопрос")
+            self.assertEqual(sessions[0]["preview"], "Последний ответ старого чата.")
+            self.assertEqual(sessions[0]["message_count"], 4)
+            self.assertNotIn("chat-private", [item["session_id"] for item in sessions])
+
+            self.assertEqual(store.sessions(2)[0]["title"], "Чужой диалог")
+            self.assertEqual(store.sessions(1, limit=1)[0]["session_id"], "chat-old")
+
     def test_restore_device_backup_only_into_empty_server_session(self):
         with tempfile.TemporaryDirectory() as directory:
             store = ChatHistoryStore(Path(directory) / "history.sqlite3")
