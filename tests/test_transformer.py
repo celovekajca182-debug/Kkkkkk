@@ -26,7 +26,7 @@ class CharTokenizerTests(unittest.TestCase):
     def test_unknown_character_is_explicit(self):
         tokenizer = CharTokenizer.from_texts(["abc"])
         decoded = tokenizer.decode(tokenizer.encode("a🌍"))
-        self.assertEqual(decoded, "a\\ufffd")
+        self.assertEqual(decoded, "a�")
 
 
 class SWINTransformerTests(unittest.TestCase):
