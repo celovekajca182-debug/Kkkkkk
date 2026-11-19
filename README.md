@@ -41,37 +41,42 @@ pip install datasets==3.3.2
 
 ## Подготовка данных и обучение
 
-Из каталога \`server\`:
-\`\`\`bash
+Из каталога `server`:
+
+```bash
 python prepare_corpus.py \
   --web-documents 2500 --web-max-chars 1500000 \
   --wiki-documents 1500 --wiki-max-chars 900000 \
+  --classic-documents 400 --classic-max-chars 250000 \
   --oasst-max-pairs 3500
 python prepare_coding_data.py --max-train 700 --max-validation 160
-python train_transformer.py --pretrain-epochs 2 --sft-epochs 2 --block-size 512
-\`\`\`
+python train_transformer.py \
+  --pretrain-epochs 12 --sft-epochs 6 --block-size 512 \
+  --batch-size 12 --d-model 128 --heads 4 --layers 4
+```
 
-Подготовка данных потоково читает FineWeb2-HQ — отобранный русский веб-текст, FineWiki — статьи русской Wikipedia, OASST1 — проверенные диалоги. MBPP отдельно добавляет задачи по Python. Полные архивы (FineWeb2-HQ около 1,2 TB и FineWiki около 10,7 GB для русских конфигураций) не скачиваются целиком.
+### Источники
 
-Скрипт создаёт:
-- \`data/fineweb2_ru_train.txt\` и \`data/fineweb2_ru_validation.txt\`;
-- \`data/finewiki_ru_train.txt\` и \`data/finewiki_ru_validation.txt\`;
-- \`data/openassistant_ru_train.jsonl\` и \`data/openassistant_ru_validation.jsonl\`;
-- \`data/mbpp_python_train.jsonl\` и \`data/mbpp_python_validation.jsonl\`;
-- \`data/dataset_manifest.json\` и \`data/mbpp_manifest.json\` с источниками, лицензиями и количеством отобранных примеров.
+- **FineWeb2-HQ rus_Cyrl** — отобранный русский веб-текст.
+- **FineWiki ru** — русская Wikipedia, энциклопедические определения и факты (CC BY-SA 4.0, с атрибуцией).
+- **ru-classic** — небольшая выборка русской классической литературы CC0; это языковая добавка, а не современная энциклопедия.
+- **OpenAssistant OASST1** — проверенные диалоговые пары.
+- **MBPP sanitized** — отдельный Python-набор с AST-фильтром.
 
-Затем обучение выполняется в два этапа:
-1. **Pretraining** — предсказание следующего Unicode-символа на смешанном корпусе FineWeb2-HQ + FineWiki + базовый текст.
-2. **Instruction tuning** — обучение на вопросах и ответах из OASST1, локальной базы SWIN и программных задач MBPP.
+Полные архивы не копируются в репозиторий: выборки скачиваются потоково, имеют лимиты и отдельные validation-файлы. Источники, фильтры, лицензии и атрибуция описаны в [server/data/DATASET_SOURCES.md](server/data/DATASET_SOURCES.md); фактическое количество выбранных документов записывается в `dataset_manifest.json`.
 
-FineWeb2, FineWiki и OASST1 имеют отдельные validation-части, которые не используются для обновления весов. Условия лицензий и атрибуция: [server/data/DATASET_SOURCES.md](server/data/DATASET_SOURCES.md).
+### Этапы обучения
 
-Артефакты:
-- \`models/swin-transformer-pretrain.pt\` — checkpoint после этапа предобучения;
-- \`models/swin-transformer.pt\` — финальный checkpoint после instruction tuning;
-- \`data/dataset_manifest.json\` — фактический состав и лицензии выборки.
+1. **Pretraining:** next-token обучение на FineWeb2-HQ + FineWiki + небольшой выборке ru-classic + локальном стартовом тексте.
+2. **Instruction tuning:** обучение на OASST1, локальных Q&A и MBPP. Loss по символам пользовательского prompt маскируется; модель оптимизирует именно ответ ассистента. Длинные ответы разбиваются на перекрывающиеся окна, validation оценивается тем же способом.
+3. **Оптимизация:** AdamW, warm-up и cosine decay, gradient clipping, выбор checkpoint по лучшему validation loss.
+4. **Quality gate:** фиксированные русские и Python-пробы. Непрошедший checkpoint не публикуется и не заменяет активные веса.
 
-GitHub Actions запускает ту же последовательность автоматически после изменений обучающего кода или исходных данных. Готовые веса и manifest публикуются в Artifacts workflow **Train SWIN Transformer**.
+Декодер подавляет повтор уже встречавшихся 6-грамм, чтобы снизить риск зацикливания при жадной генерации. Это не заменяет обучение и не считается подтверждением правильности ответа.
+
+### Ограничения
+
+SWIN остаётся небольшой экспериментальной моделью с символьным токенизатором и ограниченным объёмом обучения. Wikipedia расширяет покрытие фактов, но сама по себе не создаёт reasoning или надёжную генерацию кода. Следующие архитектурные шаги — BPE/SentencePiece и отдельные тесты для математики и программирования. Для качества крупного ассистента реалистичнее отдельно оценивать дообучение лицензированной открытой модели на GPU, а не пытаться получить масштаб ChatGPT на маленьком CPU-тренере.
 
 ## Регистрация и вход
 
