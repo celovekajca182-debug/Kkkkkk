@@ -477,8 +477,8 @@ class MainActivity : Activity() {
         if (stroke != null) setStroke(chatDp(1), stroke)
     }
 
-    private fun appendChatMessage(role: String, value: String, code: Boolean = false) {
-        if (!::chatMessages.isInitialized) return
+    private fun appendChatMessage(role: String, value: String, code: Boolean = false): LinearLayout? {
+        if (!::chatMessages.isInitialized) return null
         val user = role == "user"
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -512,6 +512,7 @@ class MainActivity : Activity() {
         row.addView(card, LinearLayout.LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT))
         chatMessages.addView(row, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
         chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
+        return row
     }
 
     private fun showChatSettings() {
@@ -694,7 +695,7 @@ class MainActivity : Activity() {
         if (::activitySwitch.isInitialized) activitySwitch.visibility = if (isCodeMode) View.VISIBLE else View.GONE
         if (::copyCodeButton.isInitialized) copyCodeButton.visibility = if (isCodeMode) View.VISIBLE else View.GONE
         if (::sendButton.isInitialized) {
-            sendButton.text = "↑"
+            sendButton.text = "➤"
             sendButton.contentDescription = if (isCodeMode) "Создать код" else "Отправить"
         }
         if (::chatInput.isInitialized) chatInput.hint =
@@ -746,7 +747,10 @@ class MainActivity : Activity() {
 
         chatInput.text.clear()
         appendChatMessage("user", message)
-        appendChatMessage("assistant", if (requestCodeMode) "Готовлю результат…" else "Думаю…")
+        val pendingReply = appendChatMessage(
+            "assistant",
+            if (requestCodeMode) "Готовлю результат…" else "Думаю…"
+        )
         sendButton.isEnabled = false
 
         thread {
@@ -853,6 +857,7 @@ class MainActivity : Activity() {
                         }
                     }
                     runOnUiThread {
+                        pendingReply?.let { chatMessages.removeView(it) }
                         if (code.isNotBlank()) {
                             lastGeneratedCode = code
                             copyCodeButton.isEnabled = true
@@ -871,12 +876,14 @@ class MainActivity : Activity() {
                     val mode = response.optString("mode", "unknown")
                     val meta = if (elapsed >= 0) "\n[$mode • $elapsed мс]" else "\n[$mode]"
                     runOnUiThread {
+                        pendingReply?.let { chatMessages.removeView(it) }
                         appendChatMessage("assistant", "$answer$meta")
                         sendButton.isEnabled = true
                     }
                 }
             } catch (error: Exception) {
                 runOnUiThread {
+                    pendingReply?.let { chatMessages.removeView(it) }
                     if (error is ApiException && error.statusCode == 401) {
                         clearLocalSession("Сессия истекла. Войди снова.")
                     } else {
