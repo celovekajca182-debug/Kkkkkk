@@ -18,6 +18,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import org.json.JSONObject
+import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -750,6 +751,30 @@ class MainActivity : Activity() {
         loadChatHistory()
     }
 
+    private fun localHistoryKey(): String = "chat_backup:$userEmail:$sessionId"
+
+    private fun readLocalHistory(): JSONArray {
+        val raw = getPreferences(MODE_PRIVATE).getString(localHistoryKey(), "[]") ?: "[]"
+        return try {
+            JSONArray(raw)
+        } catch (_: Exception) {
+            JSONArray()
+        }
+    }
+
+    private fun cacheLocalMessage(role: String, content: String) {
+        if (userEmail.isBlank() || sessionId.isBlank() || content.isBlank()) return
+        val preferences = getPreferences(MODE_PRIVATE)
+        val history = readLocalHistory()
+        history.put(
+            JSONObject()
+                .put("role", role)
+                .put("content", content.take(12000))
+        )
+        while (history.length() > 60) history.remove(0)
+        preferences.edit().putString(localHistoryKey(), history.toString()).apply()
+    }
+
     private fun loadChatHistory() {
         val token = authToken
         if (token.isNullOrBlank() || sessionId.isBlank()) {
@@ -765,10 +790,24 @@ class MainActivity : Activity() {
                     token,
                     method = "GET"
                 )
-                val messages = response.optJSONArray("messages")
+                val serverMessages = response.optJSONArray("messages") ?: JSONArray()
+                val localMessages = readLocalHistory()
+                val restoreLocal = serverMessages.length() == 0 && localMessages.length() > 0
+                val messages = if (restoreLocal) localMessages else serverMessages
+                if (restoreLocal) {
+                    runCatching {
+                        requestJson(
+                            "/memory/sync",
+                            JSONObject()
+                                .put("session_id", sessionId)
+                                .put("messages", localMessages),
+                            token
+                        )
+                    }
+                }
                 runOnUiThread {
                     chatMessages.removeAllViews()
-                    if (messages == null || messages.length() == 0) {
+                    if (messages.length() == 0) {
                         appendChatMessage("assistant", "Привет! Я SWIN AI. Чем могу помочь?")
                     } else {
                         for (index in 0 until messages.length()) {
@@ -848,6 +887,7 @@ class MainActivity : Activity() {
 
         chatInput.text.clear()
         appendChatMessage("user", message)
+        cacheLocalMessage("user", message)
         val pendingReply = appendChatMessage(
             "assistant",
             if (requestCodeMode) "Готовлю результат…" else "Думаю…"
@@ -965,6 +1005,7 @@ class MainActivity : Activity() {
                             copyCodeButton.isEnabled = true
                         }
                         appendChatMessage("assistant", output.toString(), code.isNotBlank(), code.takeIf { it.isNotBlank() })
+                        cacheLocalMessage("assistant", output.toString())
                         sendButton.isEnabled = true
                     }
                 } else {
@@ -980,6 +1021,7 @@ class MainActivity : Activity() {
                     runOnUiThread {
                         pendingReply?.let { chatMessages.removeView(it) }
                         appendChatMessage("assistant", "$answer$meta")
+                        cacheLocalMessage("assistant", "$answer$meta")
                         sendButton.isEnabled = true
                     }
                 }
@@ -990,6 +1032,7 @@ class MainActivity : Activity() {
                         clearLocalSession("Сессия истекла. Войди снова.")
                     } else {
                         appendChatMessage("assistant", "Ошибка: ${error.message}")
+                        cacheLocalMessage("assistant", "Ошибка: ${error.message}")
                         sendButton.isEnabled = true
                     }
                 }
