@@ -305,7 +305,8 @@ class SWINTransformer(nn.Module):
 
             generated.append(next_id)
             token_ids.append(next_id)
-            if stop_at_newline and next_id == 10:
+            newline_id = tokenizer.stoi.get("\\n", -1) if isinstance(tokenizer, CharTokenizer) else 10
+            if stop_at_newline and next_id == newline_id:
                 break
 
             if len(context) < self.block_size:
@@ -328,14 +329,17 @@ class SWINTransformer(nn.Module):
 
 
 def save_transformer(model: SWINTransformer, path: str, validation_loss: float | None = None):
+    tokenizer_name = "unicode_char" if isinstance(model.tokenizer, CharTokenizer) else "utf8_bytes"
     checkpoint = {
-        "format_version": 1,
-        "tokenizer": "utf8_bytes",
+        "format_version": 2 if tokenizer_name == "unicode_char" else 1,
+        "tokenizer": tokenizer_name,
+        "tokenizer_vocabulary": list(model.tokenizer.vocabulary) if isinstance(model.tokenizer, CharTokenizer) else None,
         "config": {
             "block_size": model.block_size,
             "d_model": model.d_model,
             "n_heads": model.n_heads,
             "n_layers": model.n_layers,
+            "vocab_size": model.vocab_size,
         },
         "state_dict": model.state_dict(),
         "validation_loss": validation_loss,
@@ -345,9 +349,21 @@ def save_transformer(model: SWINTransformer, path: str, validation_loss: float |
 
 def load_transformer(path: str) -> SWINTransformer:
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    if checkpoint.get("format_version") != 1 or checkpoint.get("tokenizer") != "utf8_bytes":
+    tokenizer_name = checkpoint.get("tokenizer")
+    config = dict(checkpoint.get("config", {}))
+    if tokenizer_name == "utf8_bytes" and checkpoint.get("format_version") == 1:
+        config.setdefault("vocab_size", BYTE_VOCAB_SIZE)
+        tokenizer = ByteTokenizer()
+    elif tokenizer_name == "unicode_char" and checkpoint.get("format_version") == 2:
+        vocabulary = checkpoint.get("tokenizer_vocabulary")
+        if not isinstance(vocabulary, list) or len(vocabulary) < 2:
+            raise ValueError("В checkpoint отсутствует символьный словарь.")
+        tokenizer = CharTokenizer(vocabulary)
+        config["vocab_size"] = tokenizer.vocab_size
+    else:
         raise ValueError("Неподдерживаемый формат файла Transformer.")
-    model = SWINTransformer(**checkpoint["config"])
+    model = SWINTransformer(**config)
     model.load_state_dict(checkpoint["state_dict"], strict=True)
+    model.tokenizer = tokenizer
     model.eval()
     return model
