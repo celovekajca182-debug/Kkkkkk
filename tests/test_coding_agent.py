@@ -8,6 +8,7 @@ from coding_agent import (
     _make_prompt,
     detect_language,
     run_code_assist,
+    retrieve_coding_examples,
     search_documentation,
     validate_code,
 )
@@ -87,6 +88,27 @@ class CodingAgentTests(unittest.TestCase):
         self.assertIn("https://docs.python.org/3/", urls)
         self.assertTrue(all(url.startswith("https://") for url in urls))
         self.assertEqual(results[0]["trust"], "primary")
+
+    def test_retrieves_relevant_godot_code_example(self):
+        matches = retrieve_coding_examples(
+            "Как создать объект или пулю из PackedScene в Godot 4?",
+            "gdscript",
+        )
+        self.assertTrue(matches)
+        self.assertIn("PackedScene", matches[0]["question"])
+        self.assertGreaterEqual(matches[0]["score"], 0.68)
+
+    def test_close_curated_example_is_used_without_free_form_generation(self):
+        result = run_code_assist(
+            "Как создать объект или пулю из PackedScene в Godot 4?",
+            "gdscript",
+            None,
+            research_web=False,
+        )
+        self.assertEqual(result["status"], "retrieved_example")
+        self.assertIn("instantiate()", result["code"])
+        self.assertEqual(result["verification"]["syntax"]["status"], "limited")
+        self.assertIn("matched_examples", result)
 
     def test_activity_is_hidden_by_default_and_verification_is_returned(self):
         model = FakeModel()
