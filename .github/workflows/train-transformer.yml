@@ -66,6 +66,7 @@ jobs:
             --d-model 128 \
             --heads 4 \
             --layers 4 \
+            --vocab-size 2048 \
             --output models/swin-transformer.pt \
             --pretrain-output models/swin-transformer-pretrain.pt
       - name: Evaluate generated Russian answers and Python code
