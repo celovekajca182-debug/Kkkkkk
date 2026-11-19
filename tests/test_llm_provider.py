@@ -31,7 +31,7 @@ class LlmProviderTests(unittest.TestCase):
         )
         self.assertEqual(
             llm_provider.model_for_role("code"),
-            "Qwen/Qwen2.5-Coder-3B-Instruct",
+            "Qwen/Qwen2.5-Coder-7B-Instruct",
         )
 
     def test_completion_uses_correct_model_and_auth(self):
