@@ -720,7 +720,7 @@ class MainActivity : Activity() {
     }
 
     private fun showResponseLanguageSettings() {
-        val codes = arrayOf("auto", "ru", "en", "de", "es", "fr", "zh", "uk")
+        val codes = arrayOf("auto", "ru", "en", "de", "es", "fr", "zh", "uk", "pt", "it", "ja")
         val labels = arrayOf(
             "Автоопределение по сообщению",
             "Русский",
@@ -729,7 +729,10 @@ class MainActivity : Activity() {
             "Español",
             "Français",
             "中文",
-            "Українська"
+            "Українська",
+            "Português",
+            "Italiano",
+            "日本語"
         )
         val selected = codes.indexOf(responseLanguage).coerceAtLeast(0)
         AlertDialog.Builder(this)
