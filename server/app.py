@@ -597,7 +597,7 @@ def code_assist(
 
     try:
         code_generator = None
-        if provider_configured():
+        if provider_configured("code"):
             code_generator = lambda prompt, _limit: generate_model_text(
                 prompt,
                 role="code",
@@ -619,12 +619,12 @@ def code_assist(
     result["elapsed_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
     raw_engine = result.get("generation_engine")
     result["model_loaded"] = transformer_model is not None or raw_engine == "responses_api"
-    result["model_configured"] = provider_configured()
+    result["model_configured"] = provider_configured("code")
     if raw_engine == "responses_api":
         result["generation_engine"] = "qwen2_5_coder"
         result["model"] = CODE_MODEL
     elif raw_engine == "local_swin_transformer":
-        result["generation_engine"] = "local_swin_transformer_fallback" if provider_configured() else raw_engine
+        result["generation_engine"] = "local_swin_transformer_fallback" if provider_configured("code") else raw_engine
         result["model"] = "local_swin_transformer"
     elif result.get("status") == "retrieved_example":
         result["generation_engine"] = "curated_local_example"
@@ -890,9 +890,9 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     persistent_memories = select_relevant_memories(
         message, chat_history.memories(user_id, limit=50), limit=8
     )
-    if transformer_model is not None or provider_configured():
+    if transformer_model is not None or provider_configured("chat"):
         tokenizer = getattr(transformer_model, "tokenizer", None)
-        default_context = int(os.getenv("SWIN_CHAT_PROMPT_BYTES", "12000")) if provider_configured() else 512
+        default_context = int(os.getenv("SWIN_CHAT_PROMPT_BYTES", "12000")) if provider_configured("chat") else 512
         block_size = int(getattr(transformer_model, "block_size", default_context))
         prompt = build_reasoning_prompt(
             history=history,
@@ -905,7 +905,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
         )
         used_remote_model = False
         try:
-            if provider_configured():
+            if provider_configured("chat"):
                 try:
                     generated_answer = generate_model_text(
                         prompt,
@@ -1098,8 +1098,8 @@ def capabilities():
             "provider_enabled": provider_configured(),
             "external_model_api": provider_configured(),
             "engine": "qwen_dual_model_router" if provider_configured() else "swin-local-agent",
-            "chat_model": CHAT_MODEL if provider_configured() else ("local_swin_transformer" if transformer_model is not None else None),
-            "coding_model": CODE_MODEL if provider_configured() else ("local_swin_transformer" if transformer_model is not None else None),
+            "chat_model": CHAT_MODEL if provider_configured("chat") else ("local_swin_transformer" if transformer_model is not None else None),
+            "coding_model": CODE_MODEL if provider_configured("code") else ("local_swin_transformer" if transformer_model is not None else None),
             "configured_chat_model": CHAT_MODEL,
             "configured_coding_model": CODE_MODEL,
             "fallback": "local_swin_transformer_then_retrieval" if transformer_model is not None else "local_retrieval_and_static_tools",
