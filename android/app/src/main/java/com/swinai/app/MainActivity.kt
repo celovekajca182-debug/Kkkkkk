@@ -1027,15 +1027,29 @@ class MainActivity : Activity() {
     private fun exportWorkspaceArchive(projectId: String, target: Uri) {
         try {
             val store = workspaceStore() ?: return
-            val manifest = store.exportProjectData(projectId).toString()
+            val project = store.exportProjectData(projectId)
+            val manifest = project.toString()
+            val files = project.optJSONArray("files") ?: JSONArray()
+            val folder = project.optString("project_name", "SWIN-Project")
+                .replace(Regex("[^\\p{L}\\p{N}._-]+"), "_")
+                .ifBlank { "SWIN-Project" }
             contentResolver.openOutputStream(target)?.use { output ->
                 ZipOutputStream(output).use { zip ->
                     zip.putNextEntry(ZipEntry("swin-project.json"))
                     zip.write(manifest.toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
+                    for (index in 0 until files.length()) {
+                        val file = files.optJSONObject(index) ?: continue
+                        val name = file.optString("name")
+                        if (name.isBlank() || name == "swin-project.json") continue
+                        val entryName = "$folder/$name"
+                        zip.putNextEntry(ZipEntry(entryName))
+                        zip.write(file.optString("content", "").toByteArray(Charsets.UTF_8))
+                        zip.closeEntry()
+                    }
                 }
             } ?: throw IllegalStateException("Не удалось создать файл архива.")
-            Toast.makeText(this, "Проект экспортирован в ZIP.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Проект и отдельные файлы экспортированы в ZIP.", Toast.LENGTH_LONG).show()
         } catch (error: Exception) {
             Toast.makeText(this, "Ошибка экспорта: ${error.message}", Toast.LENGTH_LONG).show()
         }
@@ -1049,6 +1063,8 @@ class MainActivity : Activity() {
                 var manifestBytes: ByteArray? = null
                 var entries = 0
                 var totalBytes = 0
+                var looseFileBytes = 0
+                val looseFiles = mutableListOf<JSONObject>()
                 contentResolver.openInputStream(source)?.use { input ->
                     ZipInputStream(input).use { zip ->
                         val buffer = ByteArray(8192)
@@ -1057,40 +1073,90 @@ class MainActivity : Activity() {
                             entries++
                             if (entries > 100) throw IllegalArgumentException("В архиве слишком много файлов.")
                             val name = entry.name
-                            if (name.startsWith("/") || name.contains("..") || name.contains("\\\\")) {
+                            if (
+                                name.startsWith("/") || name.contains("\\\\") ||
+                                name.contains("\u0000") || name.contains(":") ||
+                                name.split("/").any { it == ".." || it == "." }
+                            ) {
                                 throw IllegalArgumentException("Архив содержит небезопасный путь.")
+                            }
+                            if (entry.isDirectory) {
+                                zip.closeEntry()
+                                continue
                             }
                             val isManifest = name == "swin-project.json"
                             if (isManifest && manifestBytes != null) {
                                 throw IllegalArgumentException("В архиве несколько манифестов.")
                             }
-                            val bytes = if (isManifest) ByteArrayOutputStream() else null
+                            val bytes = ByteArrayOutputStream()
                             while (true) {
                                 val count = zip.read(buffer)
                                 if (count < 0) break
                                 totalBytes += count
-                                if (totalBytes > 1_500_000) {
-                                    throw IllegalArgumentException("Размер проекта превышает лимит 1,5 МБ.")
+                                if (totalBytes > 4_000_000) {
+                                    throw IllegalArgumentException("Распакованный архив превышает лимит 4 МБ.")
                                 }
-                                bytes?.write(buffer, 0, count)
+                                bytes.write(buffer, 0, count)
                             }
-                            if (isManifest) manifestBytes = bytes?.toByteArray()
+                            val entryBytes = bytes.toByteArray()
+                            if (isManifest) {
+                                if (entryBytes.size > 1_500_000) {
+                                    throw IllegalArgumentException("Манифест проекта слишком большой.")
+                                }
+                                manifestBytes = entryBytes
+                            } else {
+                                val fileName = name.substringAfterLast('/').trim()
+                                if (fileName.isNotBlank() && !fileName.startsWith(".")) {
+                                    looseFileBytes += entryBytes.size
+                                    if (looseFileBytes > 1_500_000 || entryBytes.size > 60_000) {
+                                        throw IllegalArgumentException("Файлы архива превышают лимит рабочего пространства.")
+                                    }
+                                    val decoded = String(entryBytes, Charsets.UTF_8)
+                                    if (decoded.contains('\\uFFFD') || entryBytes.contains(0.toByte())) {
+                                        throw IllegalArgumentException("Архив содержит бинарные файлы. Импортируются только текстовые исходники.")
+                                    }
+                                    if (looseFiles.size >= 80) {
+                                        throw IllegalArgumentException("В проекте максимум 80 файлов.")
+                                    }
+                                    looseFiles.add(
+                                        JSONObject()
+                                            .put("name", fileName)
+                                            .put("language", guessWorkspaceLanguage(fileName))
+                                            .put("content", decoded)
+                                    )
+                                }
+                            }
                             zip.closeEntry()
                         }
                     }
                 } ?: throw IllegalArgumentException("Не удалось открыть ZIP-архив.")
-                val raw = manifestBytes ?: throw IllegalArgumentException("В архиве нет swin-project.json.")
-                val manifest = JSONObject(String(raw, Charsets.UTF_8))
-                if (manifest.optString("format") != "swin-ai-project" || manifest.optInt("version") != 1) {
-                    throw IllegalArgumentException("Формат архива SWIN не распознан.")
+
+                val projectName: String
+                val sourceFiles: List<JSONObject>
+                if (manifestBytes != null) {
+                    val manifest = JSONObject(String(manifestBytes!!, Charsets.UTF_8))
+                    if (manifest.optString("format") != "swin-ai-project" || manifest.optInt("version") != 1) {
+                        throw IllegalArgumentException("Формат архива SWIN не распознан.")
+                    }
+                    val files = manifest.optJSONArray("files") ?: JSONArray()
+                    if (files.length() > 80) throw IllegalArgumentException("В проекте больше 80 файлов.")
+                    sourceFiles = (0 until files.length()).mapNotNull { files.optJSONObject(it) }
+                    if (sourceFiles.size != files.length()) {
+                        throw IllegalArgumentException("Манифест проекта содержит некорректные записи файлов.")
+                    }
+                    projectName = manifest.optString("project_name", "Импортированный проект")
+                } else {
+                    if (looseFiles.isEmpty()) {
+                        throw IllegalArgumentException("В ZIP нет текстовых файлов проекта.")
+                    }
+                    sourceFiles = looseFiles
+                    projectName = source.lastPathSegment
+                        ?.substringAfterLast('/')
+                        ?.substringBeforeLast('.')
+                        ?.take(64)
+                        ?.ifBlank { "Импортированный проект" }
+                        ?: "Импортированный проект"
                 }
-                val files = manifest.optJSONArray("files") ?: JSONArray()
-                if (files.length() > 80) throw IllegalArgumentException("В проекте больше 80 файлов.")
-                val sourceFiles = (0 until files.length()).mapNotNull { files.optJSONObject(it) }
-                if (sourceFiles.size != files.length()) {
-                    throw IllegalArgumentException("Манифест проекта содержит некорректные записи файлов.")
-                }
-                val projectName = manifest.optString("project_name", "Импортированный проект")
                 runOnUiThread {
                     try {
                         val imported = store.importProject(projectName, sourceFiles)
