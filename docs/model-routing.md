@@ -4,12 +4,12 @@ SWIN uses two independent model roles:
 
 | Role | Default model | Responsibility |
 | --- | --- | --- |
-| General chat | `Qwen/Qwen3-4B-Instruct-2507` | Conversation, explanations, math and general reasoning |
+| General chat | `Qwen/Qwen3-4B-Thinking-2507` | Conversation, explanations, math and general reasoning |
 | Coding | `Qwen/Qwen2.5-Coder-7B-Instruct` | Code generation, debugging, refactoring and repair |
 
 The model IDs are configurable; no model weights are bundled into the Android APK or the lightweight FastAPI service.
 
-The selected Hugging Face cards identify both defaults as Apache-2.0: Qwen3-4B-Instruct-2507 is a 4B non-thinking instruction model, while Qwen2.5-Coder-7B-Instruct has 7.61B parameters and a 32K native context (the card documents YaRN extension for longer contexts).
+The selected Hugging Face cards identify both defaults as Apache-2.0: Qwen3-4B-Thinking-2507 is a 4B reasoning model, while Qwen2.5-Coder-7B-Instruct has 7.61B parameters and a 32K native context (the card documents YaRN extension for longer contexts).
 
 ## Runtime architecture
 
@@ -27,6 +27,7 @@ OpenAI-compatible inference endpoint (GPU/provider)
 ```
 
 Each inference endpoint must implement `POST /v1/chat/completions`. vLLM and SGLang document this interface for the two selected model families. Recommended: run Qwen3 and Qwen2.5-Coder as separate GPU deployments and set a separate URL/key for each role. A shared gateway is also supported.
+For the Qwen3 Thinking endpoint, enable the reasoning parser (vLLM: `--enable-reasoning --reasoning-parser deepseek_r1`; SGLang: `--reasoning-parser deepseek-r1`) so internal reasoning is separated from the user-visible answer.
 
 ## Environment variables
 
@@ -40,10 +41,10 @@ Set these as server-side secrets/environment variables. Never put the provider k
 | `SWIN_CODE_BASE_URL` | shared URL | Dedicated Qwen2.5-Coder endpoint; overrides the shared URL |
 | `SWIN_CHAT_API_KEY` | shared key | Optional Qwen3 endpoint key |
 | `SWIN_CODE_API_KEY` | shared key | Optional Qwen2.5-Coder endpoint key |
-| `SWIN_CHAT_MODEL` | `Qwen/Qwen3-4B-Instruct-2507` | Model ID used by `/chat` |
+| `SWIN_CHAT_MODEL` | `Qwen/Qwen3-4B-Thinking-2507` | Model ID used by `/chat` |
 | `SWIN_CODE_MODEL` | `Qwen/Qwen2.5-Coder-7B-Instruct` | Model ID used by `/code/assist` |
 | `SWIN_LLM_TIMEOUT_SECONDS` | `90` | Inference request timeout, clamped to 5–240 seconds |
-| `SWIN_CHAT_MAX_TOKENS` | `1200` | Maximum answer tokens for Qwen3 |
+| `SWIN_CHAT_MAX_TOKENS` | `4096` | Maximum answer tokens for Qwen3 |
 | `SWIN_CODE_MAX_TOKENS` | `2400` | Maximum generated code tokens |
 | `SWIN_CHAT_TEMPERATURE` | `0.25` | Sampling temperature for chat |
 | `SWIN_CODE_TEMPERATURE` | `0.15` | Sampling temperature for code |
