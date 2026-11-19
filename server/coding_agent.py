@@ -678,6 +678,7 @@ def run_code_assist(
     project_context: str = "",
     show_activity: bool = False,
     response_language: str = "auto",
+    text_generator=None,
 ) -> dict[str, Any]:
     """Research, generate, run independent static checks and report limits."""
     normalized_task = (task or "").strip()
@@ -842,7 +843,7 @@ def run_code_assist(
             result["activity"] = activity
         return localize_result(result)
 
-    if transformer_model is None:
+    if transformer_model is None and text_generator is None:
         result = {
             "status": "model_not_loaded",
             "language": language,
@@ -863,7 +864,7 @@ def run_code_assist(
         return localize_result(result)
 
     activity.append({"stage": "planning", "status": "done", "label": "Требования и справочные источники подготовлены"})
-    block_size = int(getattr(transformer_model, "block_size", 256))
+    block_size = int(getattr(transformer_model, "block_size", 12000 if text_generator else 256))
     prompt = _make_prompt(
         normalized_task,
         language,
@@ -875,9 +876,12 @@ def run_code_assist(
         response_language=response_language,
     )
     try:
-        raw = transformer_model.generate(
-            prompt, max_new_tokens=900, temperature=0.12, top_k=12, stop_at_newline=False
-        )
+        if text_generator is not None:
+            raw = text_generator(prompt, 3500)
+        else:
+            raw = transformer_model.generate(
+                prompt, max_new_tokens=900, temperature=0.12, top_k=12, stop_at_newline=False
+            )
     except Exception as error:
         result = {
             "status": "generation_failed",
@@ -920,9 +924,12 @@ def run_code_assist(
         repair_bytes = repair_prompt.encode("utf-8")
         repair_prompt = repair_bytes[-max(64, block_size - 4):].decode("utf-8", "ignore")
         try:
-            repaired = transformer_model.generate(
-                repair_prompt, max_new_tokens=900, temperature=0.0, top_k=1, stop_at_newline=False
-            )
+            if text_generator is not None:
+                repaired = text_generator(repair_prompt, 3500)
+            else:
+                repaired = transformer_model.generate(
+                    repair_prompt, max_new_tokens=900, temperature=0.0, top_k=1, stop_at_newline=False
+                )
             repaired_code = _extract_code(repaired)
             repaired_validation = validate_code(repaired_code, language)
             if repaired_validation["status"] in {"passed", "limited"} and repaired_validation["status"] != validation["status"]:
