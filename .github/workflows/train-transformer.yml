@@ -58,7 +58,8 @@ jobs:
             --oasst-max-pairs 3500
           python prepare_coding_data.py --max-train 700 --max-validation 160
       - name: Run all tests
-        run: python -m unittest discover -s tests -v
+        working-directory: server
+        run: python -m unittest discover -s ../tests -v
       # Rebuild this checkpoint from the current multilingual code, tokenizer and datasets.
       - name: Two-stage SWIN training
         working-directory: server
