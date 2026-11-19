@@ -147,8 +147,8 @@ class KnowledgeBase:
             # Keep paragraph boundaries and cap each passage for the small SWIN
             # context window. Long paragraphs are split into bounded sentences.
             paragraphs = [
-                re.sub(r"\\s+", " ", part).strip()
-                for part in re.split(r"\\n\\s*\\n", body)
+                re.sub(r"\s+", " ", part).strip()
+                for part in re.split(r"\n\s*\n", body)
                 if len(part.strip()) >= 50
             ]
             passage = ""
