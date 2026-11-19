@@ -47,12 +47,12 @@ jobs:
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
           test -n "$AAPT"
           "$AAPT" dump badging "$APK" | tee /tmp/apk-badging.txt
-          grep -q "package: name='com.swinai.app' versionCode='16' versionName='0.8.0'" /tmp/apk-badging.txt
+          grep -q "package: name='com.swinai.app' versionCode='17' versionName='0.9.0'" /tmp/apk-badging.txt
 
       - name: Upload installable APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SWIN-AI-Android-APK-v0.8.0
+          name: SWIN-AI-Android-APK-v0.9.0
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -60,12 +60,12 @@ jobs:
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: swin-ai-v0.8.0
-          name: SWIN AI Android v0.8.0
+          tag_name: swin-ai-v0.9.0
+          name: SWIN AI Android v0.9.0
           body: |
-            SWIN AI Android build v0.8.0.
+            SWIN AI Android build v0.9.0.
 
-            Updated native chat UI, account memory manager, quick actions and clickable source links.
+            Updated native chat UI, searchable multi-conversation history, account memory manager, quick actions and clickable source links.
 
             Install the APK on Android 6.0 or newer. This is a debug-signed test build.
           files: android/app/build/outputs/apk/debug/app-debug.apk
