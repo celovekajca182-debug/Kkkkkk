@@ -3,6 +3,7 @@ import unittest
 from local_agent import (
     build_evidence_ledger,
     capability_report,
+    execute_local_plan,
     plan_task,
     register_local_tool,
     registered_local_tools,
@@ -33,6 +34,30 @@ class LocalAgentTests(unittest.TestCase):
         names = [step.name for step in steps]
         self.assertIn("retrieve_knowledge", names)
         self.assertIn("select_memory", names)
+
+    def test_execute_local_plan_runs_only_registered_local_tools(self):
+        calls = []
+        register_local_tool(
+            "code.validate",
+            lambda context: calls.append(context.get("code")) or {"status": "passed"},
+        )
+        result = execute_local_plan(
+            "Исправь функцию на Python",
+            language="ru",
+            context={"code": "def f(): pass"},
+        )
+        code_step = next(item for item in result["tool_results"] if item["tool"] == "code.validate")
+        self.assertEqual(code_step["status"], "completed")
+        self.assertEqual(code_step["result"]["status"], "passed")
+        self.assertEqual(calls, ["def f(): pass"])
+        self.assertEqual(result["engine"], "swin-local-agent")
+
+    def test_execute_local_plan_reports_unavailable_tools_without_network_fallback(self):
+        result = execute_local_plan("Создай проект приложения", language="ru")
+        project_step = next(item for item in result["tool_results"] if item["tool"] == "project.design")
+        self.assertEqual(project_step["status"], "planned")
+        self.assertNotIn("network", str(result).lower())
+        self.assertNotIn("provider", str(result).lower())
 
     def test_empty_request_has_no_steps(self):
         self.assertEqual(plan_task("   "), [])
