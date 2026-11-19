@@ -864,7 +864,10 @@ def run_code_assist(
         return localize_result(result)
 
     activity.append({"stage": "planning", "status": "done", "label": "Требования и справочные источники подготовлены"})
-    block_size = int(getattr(transformer_model, "block_size", 40000 if text_generator else 256))
+    tokenizer = getattr(transformer_model, "tokenizer", None)
+    local_block_size = int(getattr(transformer_model, "block_size", 256))
+    use_remote_generator = text_generator is not None
+    block_size = 40000 if use_remote_generator else local_block_size
     prompt = _make_prompt(
         normalized_task,
         language,
@@ -872,31 +875,64 @@ def run_code_assist(
         project_context,
         block_size,
         examples,
-        tokenizer=getattr(transformer_model, "tokenizer", None),
+        tokenizer=tokenizer,
         response_language=response_language,
     )
     try:
-        if text_generator is not None:
+        if use_remote_generator:
             raw = text_generator(prompt, 8000)
         else:
             raw = transformer_model.generate(
                 prompt, max_new_tokens=900, temperature=0.12, top_k=12, stop_at_newline=False
             )
     except Exception as error:
-        result = {
-            "status": "generation_failed",
-            "language": language,
-            "summary": "Не удалось запустить генерацию кода.",
-            "code": "",
-            "validation": {"status": "not_run", "message": str(error)[:300]},
-            "verification": {"research": research_check, "syntax": {"status": "not_run"}, "runtime_tests": {"status": "not_run"}},
-            "plan": plan,
-            "references": sources,
-            "warnings": ["Проверь загрузку модели и ресурсы сервера."],
-        }
-        if show_activity:
-            result["activity"] = activity
-        return localize_result(result)
+        if use_remote_generator and transformer_model is not None:
+            try:
+                # Rebuild the prompt within the local checkpoint's actual context.
+                fallback_prompt = _make_prompt(
+                    normalized_task,
+                    language,
+                    sources,
+                    project_context,
+                    local_block_size,
+                    examples,
+                    tokenizer=tokenizer,
+                    response_language=response_language,
+                )
+                raw = transformer_model.generate(
+                    fallback_prompt,
+                    max_new_tokens=900,
+                    temperature=0.12,
+                    top_k=12,
+                    stop_at_newline=False,
+                )
+                use_remote_generator = False
+                block_size = local_block_size
+                activity.append({
+                    "stage": "provider_fallback",
+                    "status": "done",
+                    "label": "Облачный провайдер недоступен; использована локальная модель SWIN",
+                })
+            except Exception as local_error:
+                error = local_error
+                raw = None
+        else:
+            raw = None
+        if raw is None:
+            result = {
+                "status": "generation_failed",
+                "language": language,
+                "summary": "Не удалось запустить генерацию кода.",
+                "code": "",
+                "validation": {"status": "not_run", "message": str(error)[:300]},
+                "verification": {"research": research_check, "syntax": {"status": "not_run"}, "runtime_tests": {"status": "not_run"}},
+                "plan": plan,
+                "references": sources,
+                "warnings": ["Проверь загрузку модели и ресурсы сервера."],
+            }
+            if show_activity:
+                result["activity"] = activity
+            return localize_result(result)
 
     activity.append({"stage": "generation", "status": "done", "label": "Черновик кода получен"})
     code = _extract_code(raw)
@@ -924,7 +960,7 @@ def run_code_assist(
         repair_bytes = repair_prompt.encode("utf-8")
         repair_prompt = repair_bytes[-max(64, block_size - 4):].decode("utf-8", "ignore")
         try:
-            if text_generator is not None:
+            if use_remote_generator:
                 repaired = text_generator(repair_prompt, 8000)
             else:
                 repaired = transformer_model.generate(
@@ -986,6 +1022,7 @@ def run_code_assist(
             else "Черновик создан; результат проверки ограничен или требует исправления."
         ),
         "code": code,
+        "generation_engine": "responses_api" if use_remote_generator else "local_swin_transformer",
         "validation": validation,
         "verification": verification,
         "plan": plan,
