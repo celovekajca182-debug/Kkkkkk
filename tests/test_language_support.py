@@ -30,8 +30,19 @@ class LanguageSupportTests(unittest.TestCase):
 
     def test_language_aliases_and_explicit_override(self):
         self.assertEqual(resolve_response_language("Hello", "Deutsch"), "de")
-        self.assertEqual(resolve_response_language("Hello", "pt-BR"), "en")
+        self.assertEqual(resolve_response_language("Hello", "pt-BR"), "pt")
         self.assertEqual(resolve_response_language("こんにちは", "ja"), "ja")
+
+    def test_regional_language_tags_are_normalized(self):
+        self.assertEqual(resolve_response_language("Hello", "en-US"), "en")
+        self.assertEqual(resolve_response_language("Hola", "es-MX"), "es")
+        self.assertEqual(resolve_response_language("你好", "zh-Hans-CN"), "zh")
+        self.assertEqual(resolve_response_language("Olá", "pt_BR"), "pt")
+        self.assertEqual(resolve_response_language("Hello", "xx-YY"), "en")
+
+    def test_kanji_only_japanese_name_is_detected_as_japanese(self):
+        self.assertEqual(detect_response_language("日本語"), "ja")
+        self.assertEqual(detect_response_language("日本語でお願いします"), "ja")
 
     def test_auto_uses_message_language(self):
         self.assertEqual(resolve_response_language("Olá, tudo bem?", "auto"), "pt")
