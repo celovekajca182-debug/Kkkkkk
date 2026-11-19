@@ -61,7 +61,7 @@ internal object CodeSyntaxHighlighter {
 
         when (lang) {
             "html", "xml" -> paint("""</?[A-Za-z][^>]*>""", "syntaxTag")
-            "json" -> paint(""""(?:\\.|[^"\\])*"(?=\\s*:)""", "syntaxTag")
+            "json" -> paint(""""(?:\\.|[^"\\])*"(?=\s*:)""", "syntaxTag")
         }
 
         val keywords = when (lang) {
