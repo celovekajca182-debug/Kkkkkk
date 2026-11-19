@@ -252,6 +252,55 @@ def load_finewiki_documents(
     return train_docs, validation_docs, total_chars
 
 
+def load_classic_documents(
+    max_documents: int,
+    max_chars: int,
+    max_doc_chars: int,
+    min_doc_chars: int,
+    validation_fraction: float,
+    seed: int,
+):
+    """Stream a small public-domain Russian classics sample for language pretraining."""
+    try:
+        from datasets import load_dataset
+    except ImportError as error:
+        raise RuntimeError("Для загрузки ru-classic установи пакет datasets.") from error
+
+    stream = load_dataset(
+        "Imperius/ru-classic",
+        split="train",
+        streaming=True,
+    ).shuffle(seed=seed, buffer_size=500)
+
+    train_docs: list[str] = []
+    validation_docs: list[str] = []
+    seen: set[str] = set()
+    total_chars = 0
+    rng = random.Random(seed)
+
+    for row in stream:
+        text = clean_text(row.get("text") or row.get("content") or "")
+        if len(text) < min_doc_chars or russian_letter_ratio(text) < 0.4:
+            continue
+        if len(text) > max_doc_chars:
+            text = text[:max_doc_chars].rsplit(" ", 1)[0].strip()
+        fingerprint = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if fingerprint in seen:
+            continue
+        if total_chars + len(text) > max_chars:
+            break
+        seen.add(fingerprint)
+        total_chars += len(text)
+        target = validation_docs if rng.random() < validation_fraction else train_docs
+        target.append(text)
+        if len(train_docs) + len(validation_docs) >= max_documents:
+            break
+
+    if not train_docs or not validation_docs:
+        raise RuntimeError("ru-classic не дал достаточного числа русских текстов для train/validation.")
+    return train_docs, validation_docs, total_chars
+
+
 def write_text(path: Path, documents: list[str]):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n\n<|document|>\n\n".join(documents) + "\n", encoding="utf-8")
@@ -271,6 +320,8 @@ def main():
     parser.add_argument("--web-max-chars", type=int, default=800000)
     parser.add_argument("--wiki-documents", type=int, default=1200)
     parser.add_argument("--wiki-max-chars", type=int, default=600000)
+    parser.add_argument("--classic-documents", type=int, default=400)
+    parser.add_argument("--classic-max-chars", type=int, default=250000)
     parser.add_argument("--max-doc-chars", type=int, default=3000)
     parser.add_argument("--min-doc-chars", type=int, default=250)
     parser.add_argument("--oasst-max-pairs", type=int, default=1800)
@@ -282,6 +333,8 @@ def main():
         parser.error("Лимит веб-корпуса слишком мал.")
     if args.wiki_documents < 10 or args.wiki_max_chars < 10000:
         parser.error("Лимит Wikipedia-корпуса слишком мал.")
+    if args.classic_documents < 10 or args.classic_max_chars < 10000:
+        parser.error("Лимит ru-classic-корпуса слишком мал.")
     if not 0.05 <= args.validation_fraction <= 0.2:
         parser.error("--validation-fraction должен быть от 0.05 до 0.2.")
 
@@ -302,6 +355,14 @@ def main():
         args.validation_fraction,
         args.seed + 1,
     )
+    classic_train, classic_valid, classic_chars = load_classic_documents(
+        args.classic_documents,
+        args.classic_max_chars,
+        args.max_doc_chars,
+        args.min_doc_chars,
+        args.validation_fraction,
+        args.seed + 2,
+    )
 
     try:
         from datasets import load_dataset
@@ -318,6 +379,8 @@ def main():
     write_text(output / "fineweb2_ru_validation.txt", web_valid)
     write_text(output / "finewiki_ru_train.txt", wiki_train)
     write_text(output / "finewiki_ru_validation.txt", wiki_valid)
+    write_text(output / "ru_classic_train.txt", classic_train)
+    write_text(output / "ru_classic_validation.txt", classic_valid)
     write_jsonl(output / "openassistant_ru_train.jsonl", sft_train)
     write_jsonl(output / "openassistant_ru_validation.jsonl", sft_valid)
 
@@ -348,6 +411,15 @@ def main():
                 "remove trailing reference-only sections when present",
                 "streaming sample with deterministic seed",
             ],
+        },
+        "ru_classic": {
+            "dataset": "Imperius/ru-classic",
+            "source": "https://huggingface.co/datasets/Imperius/ru-classic",
+            "license": "CC0-1.0 compilation; source texts are public domain according to dataset card",
+            "train_documents": len(classic_train),
+            "validation_documents": len(classic_valid),
+            "total_characters_capped": classic_chars,
+            "purpose": "small style/language supplement only; not a modern factual QA source",
         },
         "openassistant": {
             "dataset": "OpenAssistant/oasst1",
