@@ -11,7 +11,12 @@ from typing import Any
 from transformer import load_transformer
 
 
-def assess_generated_text(text: str, require_code: bool = False) -> dict[str, Any]:
+def assess_generated_text(
+    text: str,
+    require_code: bool = False,
+    required_concepts: list[list[str]] | None = None,
+    required_function: str | None = None,
+) -> dict[str, Any]:
     value = (text or "").strip()
     reasons: list[str] = []
     if len(value) < (8 if require_code else 24):
@@ -51,10 +56,50 @@ def assess_generated_text(text: str, require_code: bool = False) -> dict[str, An
             reasons.append(f"синтаксис Python не прошёл AST: {error.msg}")
         if not re.search(r"\b(def|class)\b", code):
             reasons.append("не найдено определение функции или класса")
+        if required_function:
+            try:
+                tree = ast.parse(code)
+            except SyntaxError:
+                tree = None
+            if tree is not None:
+                function = next(
+                    (
+                        node for node in ast.walk(tree)
+                        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        and node.name == required_function
+                    ),
+                    None,
+                )
+                if function is None:
+                    reasons.append(f"не найдена обязательная функция {required_function}")
+                else:
+                    argument_names = {argument.arg for argument in function.args.args}
+                    if not {"a", "b"}.issubset(argument_names):
+                        reasons.append("функция add должна принимать аргументы a и b")
+                    has_add_return = any(
+                        isinstance(node, ast.Return)
+                        and isinstance(node.value, ast.BinOp)
+                        and isinstance(node.value.op, ast.Add)
+                        and isinstance(node.value.left, ast.Name)
+                        and isinstance(node.value.right, ast.Name)
+                        and {node.value.left.id, node.value.right.id} == {"a", "b"}
+                        for node in ast.walk(function)
+                    )
+                    if not has_add_return:
+                        reasons.append("функция add должна возвращать сумму a и b")
     else:
         words = re.findall(r"[A-Za-zА-Яа-яЁё]{2,}", value)
         if len(words) < 4:
             reasons.append("недостаточно слов для связного ответа")
+        if required_concepts:
+            lowered = value.casefold()
+            missing = [
+                "/".join(options)
+                for options in required_concepts
+                if not any(option.casefold() in lowered for option in options)
+            ]
+            if missing:
+                reasons.append("не раскрыты ключевые понятия: " + ", ".join(missing))
 
     return {
         "status": "passed" if not reasons else "failed",
@@ -70,16 +115,19 @@ def evaluate_model(model) -> dict[str, Any]:
             "name": "russian_explanation",
             "prompt": "Пользователь: Объясни простыми словами, что такое функция в Python.\nSWIN:",
             "require_code": False,
+            "required_concepts": [["функц"], ["код"], ["результат", "задач"]],
         },
         {
             "name": "russian_debugging",
             "prompt": "Пользователь: Как по шагам найти причину ошибки TypeError в Python?\nSWIN:",
             "require_code": False,
+            "required_concepts": [["ошиб"], ["тип", "значен"], ["строк", "traceback"]],
         },
         {
             "name": "python_function",
             "prompt": "Пользователь: Напиши функцию Python add(a, b), которая возвращает сумму двух чисел. Верни полный код.\nSWIN:",
             "require_code": True,
+            "required_function": "add",
         },
     ]
     results = []
@@ -92,7 +140,12 @@ def evaluate_model(model) -> dict[str, Any]:
                 top_k=1,
                 stop_at_newline=False,
             )
-            result = assess_generated_text(generated, require_code=probe["require_code"])
+            result = assess_generated_text(
+                generated,
+                require_code=probe["require_code"],
+                required_concepts=probe.get("required_concepts"),
+                required_function=probe.get("required_function"),
+            )
         except Exception as error:
             result = {
                 "status": "failed",
