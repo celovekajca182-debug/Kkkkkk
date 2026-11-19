@@ -618,7 +618,7 @@ def code_assist(
         raise HTTPException(status_code=422, detail=str(error)) from error
     result["elapsed_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
     raw_engine = result.get("generation_engine")
-    result["model_loaded"] = transformer_model is not None
+    result["model_loaded"] = transformer_model is not None or raw_engine == "responses_api"
     result["model_configured"] = provider_configured()
     if raw_engine == "responses_api":
         result["generation_engine"] = "qwen2_5_coder"
@@ -1100,6 +1100,8 @@ def capabilities():
             "engine": "qwen_dual_model_router" if provider_configured() else "swin-local-agent",
             "chat_model": CHAT_MODEL if provider_configured() else ("local_swin_transformer" if transformer_model is not None else None),
             "coding_model": CODE_MODEL if provider_configured() else ("local_swin_transformer" if transformer_model is not None else None),
+            "configured_chat_model": CHAT_MODEL,
+            "configured_coding_model": CODE_MODEL,
             "fallback": "local_swin_transformer_then_retrieval" if transformer_model is not None else "local_retrieval_and_static_tools",
         },
         "agent": capability_report(),
