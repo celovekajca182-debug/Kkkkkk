@@ -19,6 +19,7 @@ Dataset and model cards:
 - https://huggingface.co/datasets/project-numina/NuminaMath-CoT
 - https://huggingface.co/datasets/EleutherAI/hendrycks_math
 - https://huggingface.co/datasets/google-research-datasets/mbpp
+- https://huggingface.co/datasets/nvidia/OpenCodeReasoning
 
 ## Google Colab
 
@@ -30,20 +31,22 @@ Dataset and model cards:
 
 Command-line equivalent from the server directory:
 
-    pip install -r requirements-qlora.txt
-    python prepare_coding_data.py --max-train 700 --max-validation 160
-    python train_swin_qlora.py \
-      --base-model Qwen/Qwen3-1.7B \
-      --max-numina 5000 \\
-  --max-opencode-train 3000 \\
-  --max-opencode-validation 300 \\
-      --max-hendrycks-per-config 250 \
-      --max-hendrycks-validation-per-config 100 \
-      --max-seq-length 1536 \
-      --epochs 2 \
-      --batch-size 1 \
-      --gradient-accumulation 8 \
-      --output-dir /content/drive/MyDrive/SWIN_AI/qlora-run
+```bash
+pip install -r requirements-qlora.txt
+python prepare_coding_data.py --max-train 700 --max-validation 160
+python train_swin_qlora.py \
+  --base-model Qwen/Qwen3-1.7B \
+  --max-numina 5000 \
+  --max-opencode-train 3000 \
+  --max-opencode-validation 300 \
+  --max-hendrycks-per-config 250 \
+  --max-hendrycks-validation-per-config 100 \
+  --max-seq-length 1536 \
+  --epochs 2 \
+  --batch-size 1 \
+  --gradient-accumulation 8 \
+  --output-dir /content/drive/MyDrive/SWIN_AI/qlora-run
+```
 
 To publish, log in with huggingface_hub.login() and add:
     --push-to-hub --hub-model-id YOUR_USERNAME/swin-ai-qwen3-1.7b-math-code
