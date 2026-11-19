@@ -218,6 +218,27 @@ class CodingAgentTests(unittest.TestCase):
         self.assertIn("Черновик", joined)
         self.assertNotIn("chain of thought", joined.lower())
 
+    def test_cloud_text_generator_can_create_validated_code_without_local_checkpoint(self):
+        calls = []
+
+        def generator(prompt, max_tokens):
+            calls.append((prompt, max_tokens))
+            return "def format_display_name(name: str) -> str:\n    return name.strip().title()\n"
+
+        result = run_code_assist(
+            "Создай функцию Python для форматирования отображаемого имени пользователя",
+            "python",
+            None,
+            research_web=False,
+            text_generator=generator,
+        )
+        self.assertEqual(result["status"], "draft_validated")
+        self.assertIn("format_display_name", result["code"])
+        self.assertEqual(result["validation"]["status"], "passed")
+        self.assertEqual(len(calls), 1)
+        self.assertGreater(calls[0][1], 0)
+        self.assertIn("User:", calls[0][0])
+
     def test_missing_model_does_not_fake_code(self):
         result = run_code_assist(
             "Напиши API",
