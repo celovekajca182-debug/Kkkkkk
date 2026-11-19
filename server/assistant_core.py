@@ -131,6 +131,66 @@ def search_web(query: str, max_results: int = 6) -> list[dict[str, str]]:
     return [row[2] for row in ranked[:max(1, min(int(max_results), 8))]]
 
 
+def build_search_queries(message: str) -> list[str]:
+    """Keep the original request and add a cleaned query without search-command filler."""
+    original = re.sub(r"\s+", " ", (message or "")).strip()
+    if not original:
+        return []
+    cleaned = re.sub(
+        r"^(?:поищи(?: в интернете)?|найди(?: в интернете)?|проверь(?: в интернете)?|"
+        r"посмотри(?: в интернете)?|исследуй|search for|look up|find online|"
+        r"check online|research)\s*[:,—-]?\s*",
+        "",
+        original,
+        flags=re.IGNORECASE,
+    ).strip()
+    queries = [original[:500]]
+    if len(cleaned) >= 5 and cleaned.casefold() != original.casefold():
+        queries.append(cleaned[:500])
+    return queries[:2]
+
+
+def search_web_many(message: str, max_results: int = 6) -> list[dict[str, str]]:
+    """Run a small query set, merge duplicate pages and rank stronger sources first."""
+    queries = build_search_queries(message)
+    combined: list[dict[str, str]] = []
+    seen: set[str] = set()
+    per_query = max(2, min(int(max_results), 5))
+    for query in queries:
+        for item in search_web(query, max_results=per_query):
+            parsed = urlparse(str(item.get("url", "")))
+            canonical = (_host(str(item.get("url", ""))) + parsed.path.rstrip("/")).casefold()
+            if not canonical or canonical in seen:
+                continue
+            seen.add(canonical)
+            combined.append(item)
+    trust_order = {"primary": 3, "news": 2, "general": 1}
+    combined.sort(key=lambda item: trust_order.get(str(item.get("trust", "general")), 0), reverse=True)
+    return combined[:max(1, min(int(max_results), 8))]
+
+
+def select_relevant_memories(
+    query: str,
+    memories: list[dict[str, Any]],
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    """Prefer memories that overlap the current request; keep preferences as background."""
+    query_terms = set(re.findall(r"[a-zа-яё0-9_+#.-]{3,}", (query or "").casefold()))
+    ranked: list[tuple[float, int, dict[str, Any]]] = []
+    for index, item in enumerate(memories or []):
+        value = str(item.get("value", "")).casefold()
+        terms = set(re.findall(r"[a-zа-яё0-9_+#.-]{3,}", value))
+        overlap = len(query_terms.intersection(terms))
+        score = overlap / max(1, len(query_terms))
+        if item.get("category") == "preference":
+            score += 0.08
+        if not query_terms or score > 0:
+            ranked.append((score, -index, item))
+    ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    selected = [row[2] for row in ranked[:max(1, min(int(limit), 20))]]
+    return selected
+
+
 def format_evidence(references: list[dict[str, Any]], limit: int = 4) -> str:
     """Compact source snippets for RAG; retrieved page text is untrusted evidence."""
     parts: list[str] = []
