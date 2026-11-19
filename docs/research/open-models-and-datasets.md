@@ -120,6 +120,17 @@ SWIN использует его не как сплошной веб-текст,
 
 Источник: https://huggingface.co/datasets/LLiserginov/russian-instructions-10k. Карточка указывает ограничения CC BY-NC 4.0 и условия исходного Alpaca. Не использовать в основном корпусе без отдельного решения по правам на коммерческое использование.
 
+### Byte-level BPE tokenizer
+
+- Реализация: Hugging Face `tokenizers`, модель BPE с ByteLevel pre-tokenizer/decoder.
+- Обучается только на train корпусах (FineWeb2/FineWiki/ru-classic + локальный instruction train); validation не участвует в построении словаря.
+- Целевой размер словаря по умолчанию: 2 048, с минимальным порогом 512. Полный JSON сериализуется непосредственно в checkpoint v3.
+- Алфавит ByteLevel включает все 256 байтов, поэтому кириллица, emoji, HTML, GDScript и Python не должны сваливаться в неизвестный символ.
+- `<|swin_eot|>` добавляется как EOS для границ ответов; `<|swin_pad|>` используется для дополняющих позиций, где loss маскируется.
+- Для старых checkpoint формата v1 (UTF-8 bytes) и v2 (Unicode char) загрузчик сохраняет обратную совместимость.
+
+Ссылки на API: [BPE trainer](https://huggingface.co/docs/tokenizers/python/latest/api/reference.html) и [training from memory](https://huggingface.co/docs/tokenizers/python/latest/tutorials/python/training_from_memory.html).
+
 ## 3. Что теперь происходит при обучении SWIN
 
 Workflow GitHub Actions выполняет два этапа.
@@ -146,7 +157,7 @@ Workflow GitHub Actions выполняет два этапа.
 
 ## 4. Что ещё не решено
 
-- SWIN перешла на Unicode character tokenizer: русская буква — один токен, словарь хранится в checkpoint; старые byte-level checkpoint по-прежнему поддерживаются. Следующий архитектурный шаг — BPE/SentencePiece tokenizer и расширенный контекст.
+- SWIN использует byte-level BPE tokenizer: частые байтовые последовательности объединяются в субсловные токены, любые Unicode символы остаются представимыми. JSON токенизатора включается в checkpoint v3; старые char и byte checkpoint по-прежнему поддерживаются.
 - Размер SWIN остаётся учебным и намного меньше открытых моделей на миллиарды параметров.
 - Небольшой ограниченный sample не заменяет триллионы токенов OLMo 2. Он лишь даёт возможность воспроизводимо тренировать и проверять небольшой собственный эксперимент.
 - Снижение validation loss не доказывает, что ответы стали фактически правильными. Нужен отдельный фиксированный набор тестовых вопросов и проверка качества генерации.
