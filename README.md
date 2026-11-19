@@ -91,7 +91,7 @@ SWIN остаётся небольшой экспериментальной мо
 - Математика: [NuminaMath-CoT](https://huggingface.co/datasets/project-numina/NuminaMath-CoT) и семь областей [Hendrycks MATH](https://huggingface.co/datasets/EleutherAI/hendrycks_math).
 - Программирование: [NVIDIA OpenCodeReasoning](https://huggingface.co/datasets/nvidia/OpenCodeReasoning) (CC BY 4.0; reasoning + Python solutions), MBPP sanitized и проверенные локальные примеры SWIN.
 - Общие приветствия и пустой small-talk в этот этап не добавляются.
-- Готовый ноутбук: [notebooks/SWIN_AI_QLoRA_Colab.ipynb](notebooks/SWIN_AI_QLoRA_Colab.ipynb).
+- Готовый ноутбук: [notebooks/SWIN_AI_QLoRA_Colab.ipynb](notebooks/SWIN_AI_QLoRA_Colab.ipynb). В нём можно указать папку базовой модели на Google Drive через `DRIVE_BASE_MODEL_PATH`.
 - Код обучения: [server/train_swin_qlora.py](server/train_swin_qlora.py).
 - Подробности, лимиты и команды: [docs/qlora-math-code-training.md](docs/qlora-math-code-training.md).
 
