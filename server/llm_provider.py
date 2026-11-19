@@ -1,7 +1,7 @@
 """OpenAI-compatible inference routing for the two SWIN model roles.
 
-The API server stays lightweight; model weights live on a dedicated inference
-host (vLLM, SGLang, or another OpenAI-compatible provider).
+The API server stays lightweight; model weights live on dedicated inference
+hosts (vLLM, SGLang, or another OpenAI-compatible provider).
 """
 from __future__ import annotations
 
@@ -17,16 +17,43 @@ CHAT_MODEL = os.getenv(
 CODE_MODEL = os.getenv(
     "SWIN_CODE_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct"
 ).strip()
+
+# A shared gateway is supported, but per-role URLs allow two independent GPU hosts.
 BASE_URL = os.getenv("SWIN_LLM_BASE_URL", "").strip().rstrip("/")
+CHAT_BASE_URL = os.getenv("SWIN_CHAT_BASE_URL", "").strip().rstrip("/")
+CODE_BASE_URL = os.getenv("SWIN_CODE_BASE_URL", "").strip().rstrip("/")
 API_KEY = os.getenv("SWIN_LLM_API_KEY", "").strip()
-TIMEOUT_SECONDS = max(
-    5.0, min(240.0, float(os.getenv("SWIN_LLM_TIMEOUT_SECONDS", "90")))
-)
+CHAT_API_KEY = os.getenv("SWIN_CHAT_API_KEY", "").strip()
+CODE_API_KEY = os.getenv("SWIN_CODE_API_KEY", "").strip()
+try:
+    TIMEOUT_SECONDS = max(
+        5.0, min(240.0, float(os.getenv("SWIN_LLM_TIMEOUT_SECONDS", "90")))
+    )
+except ValueError:
+    TIMEOUT_SECONDS = 90.0
 
 
-def provider_configured() -> bool:
-    """Return whether a remote OpenAI-compatible inference endpoint is configured."""
-    return bool(BASE_URL)
+def _base_url_for_role(role: Literal["chat", "code"]) -> str:
+    if role == "chat":
+        return CHAT_BASE_URL or BASE_URL
+    if role == "code":
+        return CODE_BASE_URL or BASE_URL
+    raise ValueError("Unknown SWIN model role.")
+
+
+def _api_key_for_role(role: Literal["chat", "code"]) -> str:
+    if role == "chat":
+        return CHAT_API_KEY or API_KEY
+    if role == "code":
+        return CODE_API_KEY or API_KEY
+    raise ValueError("Unknown SWIN model role.")
+
+
+def provider_configured(role: Literal["chat", "code"] | None = None) -> bool:
+    """Return whether the shared endpoint or the selected role endpoint is set."""
+    if role is None:
+        return bool(_base_url_for_role("chat") or _base_url_for_role("code"))
+    return bool(_base_url_for_role(role))
 
 
 def model_for_role(role: Literal["chat", "code"]) -> str:
@@ -54,9 +81,10 @@ def generate_model_text(
     max_tokens: int = 1200,
     temperature: float = 0.2,
 ) -> str:
-    """Generate text using the configured model role and OpenAI chat-completions API."""
-    if not BASE_URL:
-        raise RuntimeError("SWIN_LLM_BASE_URL is not configured.")
+    """Generate text using the selected role's OpenAI-compatible chat-completions API."""
+    base_url = _base_url_for_role(role)
+    if not base_url:
+        raise RuntimeError(f"SWIN {role} inference endpoint is not configured.")
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("Prompt must not be empty.")
 
@@ -69,11 +97,12 @@ def generate_model_text(
         "stream": False,
     }
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
-    if API_KEY:
-        headers["Authorization"] = "Bearer " + API_KEY
+    api_key = _api_key_for_role(role)
+    if api_key:
+        headers["Authorization"] = "Bearer " + api_key
 
     request = urllib.request.Request(
-        _completion_url(BASE_URL),
+        _completion_url(base_url),
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers=headers,
         method="POST",
