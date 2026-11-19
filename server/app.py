@@ -116,7 +116,7 @@ class ChatRequest(BaseModel):
 
 class CodeAssistRequest(BaseModel):
     task: str = Field(min_length=1, max_length=4000)
-    language: str = Field(default="auto", min_length=2, max_length=32)
+    language: str = Field(default="auto", min_length=1, max_length=32)
     research_web: bool = True
     show_activity: bool = False
     project_context: str = Field(default="", max_length=4000)
