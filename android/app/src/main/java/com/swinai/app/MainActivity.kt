@@ -570,6 +570,21 @@ class MainActivity : Activity() {
     }
 
     private fun showChatSettings() {
+        val options = arrayOf("Адрес сервера", "Очистить историю и память", "Выйти из аккаунта")
+        AlertDialog.Builder(this)
+            .setTitle("Настройки SWIN AI")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showEndpointSettings()
+                    1 -> confirmClearChatMemory()
+                    2 -> logout()
+                }
+            }
+            .setNegativeButton("Закрыть", null)
+            .show()
+    }
+
+    private fun showEndpointSettings() {
         val field = EditText(this).apply {
             setText(endpointValue)
             hint = "https://адрес-сервера"
@@ -589,9 +604,44 @@ class MainActivity : Activity() {
                     Toast.makeText(this, "Адрес сохранён", Toast.LENGTH_SHORT).show()
                 } else Toast.makeText(this, "Нужен HTTPS-адрес", Toast.LENGTH_SHORT).show()
             }
-            .setNeutralButton("Выйти") { _, _ -> logout() }
             .setNegativeButton("Закрыть", null)
             .show()
+    }
+
+    private fun confirmClearChatMemory() {
+        AlertDialog.Builder(this)
+            .setTitle("Очистить память?")
+            .setMessage("Будут удалены история этой сессии на сервере и резервная копия на телефоне.")
+            .setPositiveButton("Очистить") { _, _ -> clearChatMemory() }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun clearChatMemory() {
+        val token = authToken
+        thread {
+            var serverCleared = false
+            try {
+                if (!token.isNullOrBlank()) {
+                    requestJson(
+                        "/memory/clear",
+                        JSONObject().put("session_id", sessionId),
+                        token
+                    )
+                    serverCleared = true
+                }
+            } catch (_: Exception) {
+                // Local history is still cleared; server cleanup can be retried later.
+            }
+            getPreferences(MODE_PRIVATE).edit().remove(localHistoryKey()).apply()
+            runOnUiThread {
+                chatMessages.removeAllViews()
+                appendChatMessage("assistant", "История очищена. Начнём заново.")
+                val message = if (serverCleared) "История очищена на сервере и телефоне."
+                    else "Копия на телефоне очищена. Сервер временно недоступен."
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun showChatScreen() {
