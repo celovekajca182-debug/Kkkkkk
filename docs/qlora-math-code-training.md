@@ -4,7 +4,7 @@
 
 The legacy train_transformer.py initializes a small decoder from random weights. It is useful for experiments with SWIN's tokenizer and attention implementation, but the small local corpus cannot give it broad mathematical and programming competence.
 
-The new train_swin_qlora.py fine-tunes the pretrained Qwen/Qwen3-1.7B model using 4-bit QLoRA. The output is a PEFT adapter, not a copy of the full base weights.
+The new train_swin_qlora.py fine-tunes the pretrained Qwen/Qwen3-4B-Thinking-2507 model using 4-bit QLoRA. The output is a PEFT adapter, not a copy of the full base weights. This optional adapter-training path is reserved for the next model-training stage; runtime chat and coding already use separate Qwen endpoints.
 
 ## Curriculum — no greeting filler
 
@@ -15,7 +15,7 @@ The new train_swin_qlora.py fine-tunes the pretrained Qwen/Qwen3-1.7B model usin
 Math prompts request rigorous derivations, justified steps, verification and a final answer. Coding prompts request maintainable implementations and respect for supplied constraints. User prompt tokens are masked from the training loss; assistant answer tokens are trained.
 
 Dataset and model cards:
-- https://huggingface.co/Qwen/Qwen3-1.7B
+- https://huggingface.co/Qwen/Qwen3-4B-Thinking-2507
 - https://huggingface.co/datasets/project-numina/NuminaMath-CoT
 - https://huggingface.co/datasets/EleutherAI/hendrycks_math
 - https://huggingface.co/datasets/google-research-datasets/mbpp
@@ -41,7 +41,7 @@ Command-line equivalent from the server directory:
 pip install -r requirements-qlora.txt
 python prepare_coding_data.py --max-train 700 --max-validation 160
 python train_swin_qlora.py \
-  --base-model Qwen/Qwen3-1.7B \
+  --base-model Qwen/Qwen3-4B-Thinking-2507 \
   --max-numina 5000 \
   --max-opencode-train 3000 \
   --max-opencode-validation 300 \
