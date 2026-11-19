@@ -305,7 +305,7 @@ class SWINTransformer(nn.Module):
 
             generated.append(next_id)
             token_ids.append(next_id)
-            newline_id = tokenizer.stoi.get("\\n", -1) if isinstance(tokenizer, CharTokenizer) else 10
+            newline_id = tokenizer.stoi.get("\n", -1) if isinstance(tokenizer, CharTokenizer) else 10
             if stop_at_newline and next_id == newline_id:
                 break
 
