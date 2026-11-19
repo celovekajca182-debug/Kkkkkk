@@ -66,9 +66,9 @@ class CodingAgentTests(unittest.TestCase):
             block_size=256,
         )
         self.assertLessEqual(len(prompt.encode("utf-8")), 252)
-        self.assertIn("ЗАДАЧА:", prompt)
+        self.assertIn("User:", prompt)
         self.assertIn("ВАЖНО:", prompt)
-        self.assertIn("КОД:", prompt)
+        self.assertIn("Assistant:", prompt)
 
     def test_unicode_tokenizer_uses_character_context_instead_of_utf8_bytes(self):
         class CharacterTokenizer:
@@ -86,10 +86,31 @@ class CodingAgentTests(unittest.TestCase):
             "Проект: Android-клиент SWIN AI, Python 3.11",
             block_size=256,
             tokenizer=CharacterTokenizer(),
+            response_language="ru",
         )
         self.assertLessEqual(len(prompt), 252)
         self.assertIn(task, prompt)
-        self.assertIn("Контекст проекта", prompt)
+        self.assertIn("Project context:", prompt)
+
+    def test_bpe_tokenizer_uses_subword_count_for_context_budget(self):
+        class PairBPETokenizer:
+            @staticmethod
+            def encode(value):
+                return [value[index:index + 2] for index in range(0, len(value), 2)]
+
+        task = "Создай функцию для загрузки настроек, проверки ошибок и сохранения конфигурации."
+        prompt = _make_prompt(
+            task,
+            "python",
+            [],
+            "",
+            block_size=256,
+            tokenizer=PairBPETokenizer(),
+            response_language="ru",
+        )
+        self.assertIn(task, prompt)
+        self.assertTrue(prompt.startswith("Response language: Russian."))
+        self.assertLessEqual(len(PairBPETokenizer.encode(prompt)), 252)
 
     def test_search_covers_general_internet_and_rejects_insecure_links(self):
         fake_module = types.SimpleNamespace(
