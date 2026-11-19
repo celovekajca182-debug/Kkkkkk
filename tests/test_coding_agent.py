@@ -70,6 +70,27 @@ class CodingAgentTests(unittest.TestCase):
         self.assertIn("ВАЖНО:", prompt)
         self.assertIn("КОД:", prompt)
 
+    def test_unicode_tokenizer_uses_character_context_instead_of_utf8_bytes(self):
+        class CharacterTokenizer:
+            vocabulary = ["<UNK>", "а", "б"]
+
+            @staticmethod
+            def encode(value):
+                return list(value)
+
+        task = "Создай функцию загрузки настроек и обработки ошибок."
+        prompt = _make_prompt(
+            task,
+            "python",
+            [],
+            "Проект: Android-клиент SWIN AI, Python 3.11",
+            block_size=256,
+            tokenizer=CharacterTokenizer(),
+        )
+        self.assertLessEqual(len(prompt), 252)
+        self.assertIn(task, prompt)
+        self.assertIn("Контекст проекта", prompt)
+
     def test_search_covers_general_internet_and_rejects_insecure_links(self):
         fake_module = types.SimpleNamespace(
             DDGS=lambda **kwargs: types.SimpleNamespace(
