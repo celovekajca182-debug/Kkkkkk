@@ -58,6 +58,73 @@ class CharTokenizer:
         return "".join(result)
 
 
+class BPEByteTokenizer:
+    """Byte-level BPE tokenizer with a portable JSON-serialized vocabulary."""
+
+    tokenizer_type = "byte_bpe"
+    EOS_TOKEN = "<|swin_eot|>"
+    PAD_TOKEN = "<|swin_pad|>"
+    UNK_TOKEN = "[UNK]"
+
+    def __init__(self, tokenizer_json: str):
+        try:
+            from tokenizers import Tokenizer
+        except ImportError as error:
+            raise RuntimeError(
+                "Для загрузки BPE checkpoint установи tokenizers из requirements-transformer.txt."
+            ) from error
+        self._tokenizer = Tokenizer.from_str(tokenizer_json)
+        self.vocab_size = self._tokenizer.get_vocab_size(with_added_tokens=True)
+        self.eos_token_id = self._tokenizer.token_to_id(self.EOS_TOKEN)
+        self.pad_token_id = self._tokenizer.token_to_id(self.PAD_TOKEN)
+        if self.eos_token_id is None or self.pad_token_id is None:
+            raise ValueError("BPE tokenizer checkpoint не содержит EOS/PAD токены.")
+
+    @classmethod
+    def from_texts(cls, texts, vocab_size: int = 2048, min_frequency: int = 2):
+        try:
+            from tokenizers import Tokenizer, decoders, models, pre_tokenizers, trainers
+        except ImportError as error:
+            raise RuntimeError(
+                "Для обучения BPE установи tokenizers из requirements-transformer.txt."
+            ) from error
+
+        if vocab_size < 512:
+            raise ValueError("BPE vocab_size должен быть не меньше 512.")
+        samples = [text for text in texts if text and text.strip()]
+        if not samples:
+            raise ValueError("Нельзя обучить BPE на пустом корпусе.")
+
+        tokenizer = Tokenizer(models.BPE(unk_token=cls.UNK_TOKEN))
+        tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+        tokenizer.decoder = decoders.ByteLevel()
+        trainer = trainers.BpeTrainer(
+            vocab_size=vocab_size,
+            min_frequency=min_frequency,
+            special_tokens=[cls.UNK_TOKEN, cls.EOS_TOKEN, cls.PAD_TOKEN],
+            initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
+            show_progress=True,
+        )
+        tokenizer.train_from_iterator(samples, trainer=trainer, length=len(samples))
+        return cls(tokenizer.to_str())
+
+    @classmethod
+    def from_json(cls, tokenizer_json: str):
+        return cls(tokenizer_json)
+
+    def to_json(self) -> str:
+        return self._tokenizer.to_str(pretty=False)
+
+    def encode(self, text: str) -> list[int]:
+        return self._tokenizer.encode(text, add_special_tokens=False).ids
+
+    def decode(self, token_ids: list[int]) -> str:
+        return self._tokenizer.decode([int(token_id) for token_id in token_ids], skip_special_tokens=True)
+
+    def ends_with_newline(self, token_ids: list[int]) -> bool:
+        return self.decode(token_ids).endswith("\n")
+
+
 class SWINMultiheadAttention(nn.Module):
     """Multi-head causal attention with incremental key/value caching.
 
@@ -208,7 +275,7 @@ def suppress_repeated_ngrams(
 
 
 class SWINTransformer(nn.Module):
-    """Small decoder-only Transformer trained from scratch on next-byte prediction."""
+    """Small decoder-only Transformer; supports byte, character and byte-BPE checkpoints."""
 
     def __init__(
         self,
@@ -329,11 +396,21 @@ class SWINTransformer(nn.Module):
                 probabilities = F.softmax(next_logits, dim=-1)
                 next_id = int(torch.multinomial(probabilities, num_samples=1).item())
 
+            if isinstance(tokenizer, BPEByteTokenizer) and next_id == tokenizer.eos_token_id:
+                break
+
             generated.append(next_id)
             token_ids.append(next_id)
-            newline_id = tokenizer.stoi.get("\n", -1) if isinstance(tokenizer, CharTokenizer) else 10
-            if stop_at_newline and next_id == newline_id:
-                break
+            if stop_at_newline:
+                if isinstance(tokenizer, CharTokenizer):
+                    newline_id = tokenizer.stoi.get("\n", -1)
+                    should_stop = next_id == newline_id
+                elif isinstance(tokenizer, BPEByteTokenizer):
+                    should_stop = tokenizer.ends_with_newline(generated)
+                else:
+                    should_stop = next_id == 10
+                if should_stop:
+                    break
 
             if len(context) < self.block_size:
                 new_token = torch.tensor(
@@ -355,11 +432,27 @@ class SWINTransformer(nn.Module):
 
 
 def save_transformer(model: SWINTransformer, path: str, validation_loss: float | None = None):
-    tokenizer_name = "unicode_char" if isinstance(model.tokenizer, CharTokenizer) else "utf8_bytes"
+    if isinstance(model.tokenizer, BPEByteTokenizer):
+        tokenizer_name = "byte_bpe"
+        format_version = 3
+        tokenizer_json = model.tokenizer.to_json()
+        tokenizer_vocabulary = None
+    elif isinstance(model.tokenizer, CharTokenizer):
+        tokenizer_name = "unicode_char"
+        format_version = 2
+        tokenizer_json = None
+        tokenizer_vocabulary = list(model.tokenizer.vocabulary)
+    else:
+        tokenizer_name = "utf8_bytes"
+        format_version = 1
+        tokenizer_json = None
+        tokenizer_vocabulary = None
+
     checkpoint = {
-        "format_version": 2 if tokenizer_name == "unicode_char" else 1,
+        "format_version": format_version,
         "tokenizer": tokenizer_name,
-        "tokenizer_vocabulary": list(model.tokenizer.vocabulary) if isinstance(model.tokenizer, CharTokenizer) else None,
+        "tokenizer_json": tokenizer_json,
+        "tokenizer_vocabulary": tokenizer_vocabulary,
         "config": {
             "block_size": model.block_size,
             "d_model": model.d_model,
@@ -386,6 +479,13 @@ def load_transformer(path: str) -> SWINTransformer:
             raise ValueError("В checkpoint отсутствует символьный словарь.")
         tokenizer = CharTokenizer(vocabulary)
         config["vocab_size"] = tokenizer.vocab_size
+    elif tokenizer_name == "byte_bpe" and checkpoint.get("format_version") == 3:
+        tokenizer_json = checkpoint.get("tokenizer_json")
+        if not isinstance(tokenizer_json, str) or not tokenizer_json:
+            raise ValueError("В checkpoint отсутствует BPE tokenizer JSON.")
+        tokenizer = BPEByteTokenizer.from_json(tokenizer_json)
+        if tokenizer.vocab_size != int(config.get("vocab_size", -1)):
+            raise ValueError("Размер BPE словаря не совпадает с размером embedding.")
     else:
         raise ValueError("Неподдерживаемый формат файла Transformer.")
     model = SWINTransformer(**config)
