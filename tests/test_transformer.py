@@ -4,7 +4,7 @@ from pathlib import Path
 
 import torch
 
-from transformer import ByteTokenizer, SWINTransformer, load_transformer, save_transformer
+from transformer import ByteTokenizer, CharTokenizer, SWINTransformer, load_transformer, save_transformer
 
 
 class ByteTokenizerTests(unittest.TestCase):
@@ -13,6 +13,20 @@ class ByteTokenizerTests(unittest.TestCase):
         encoded = ByteTokenizer.encode(text)
         self.assertTrue(all(0 <= token <= 255 for token in encoded))
         self.assertEqual(ByteTokenizer.decode(encoded), text)
+
+
+class CharTokenizerTests(unittest.TestCase):
+    def test_russian_and_code_round_trip_as_single_characters(self):
+        text = "Привет, SWIN AI!\\nprint(42)"
+        tokenizer = CharTokenizer.from_texts([text])
+        encoded = tokenizer.encode(text)
+        self.assertEqual(len(encoded), len(text))
+        self.assertEqual(tokenizer.decode(encoded), text)
+
+    def test_unknown_character_is_explicit(self):
+        tokenizer = CharTokenizer.from_texts(["abc"])
+        decoded = tokenizer.decode(tokenizer.encode("a🌍"))
+        self.assertEqual(decoded, "a\\ufffd")
 
 
 class SWINTransformerTests(unittest.TestCase):
@@ -88,6 +102,30 @@ class SWINTransformerTests(unittest.TestCase):
     def test_generate_returns_valid_text(self):
         result = self.model.generate("Пользователь:", max_new_tokens=8)
         self.assertIsInstance(result, str)
+
+    def test_character_checkpoint_round_trip_preserves_vocabulary(self):
+        tokenizer = CharTokenizer.from_texts(["Пользователь: Привет\\nSWIN: Здравствуйте!"])
+        model = SWINTransformer(
+            block_size=32,
+            d_model=32,
+            n_heads=4,
+            n_layers=1,
+            dropout=0.0,
+            vocab_size=tokenizer.vocab_size,
+        )
+        model.tokenizer = tokenizer
+        model.eval()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "swin-char.pt"
+            save_transformer(model, str(path), validation_loss=1.0)
+            loaded = load_transformer(str(path))
+            self.assertIsInstance(loaded.tokenizer, CharTokenizer)
+            self.assertEqual(loaded.tokenizer.vocabulary, tokenizer.vocabulary)
+            tokens = torch.tensor([tokenizer.encode("Привет")], dtype=torch.long)
+            with torch.no_grad():
+                before, _ = model(tokens)
+                after, _ = loaded(tokens)
+            self.assertTrue(torch.allclose(before, after, atol=1e-6))
 
     def test_checkpoint_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
