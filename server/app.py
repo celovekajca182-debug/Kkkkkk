@@ -299,21 +299,34 @@ def record_chat_turn(
     return count
 
 
-def enforce_auth_rate_limit(request: Request, action: str, max_attempts: int) -> None:
-    address = request.client.host if request.client else "unknown"
-    key = f"{action}:{address}"
+def enforce_rate_limit_key(
+    key: str,
+    max_attempts: int,
+    window_seconds: int = AUTH_WINDOW_SECONDS,
+) -> None:
+    """Apply a small in-process sliding-window limit to a stable identity key."""
     now = time.monotonic()
     with _auth_attempts_lock:
         attempts = _auth_attempts[key]
-        while attempts and now - attempts[0] > AUTH_WINDOW_SECONDS:
+        while attempts and now - attempts[0] >= window_seconds:
             attempts.popleft()
         if len(attempts) >= max_attempts:
             raise HTTPException(
                 status_code=429,
-                detail="Слишком много попыток. Подожди несколько минут.",
-                headers={"Retry-After": str(AUTH_WINDOW_SECONDS)},
+                detail="Слишком много запросов. Подожди несколько минут.",
+                headers={"Retry-After": str(window_seconds)},
             )
         attempts.append(now)
+
+
+def enforce_auth_rate_limit(request: Request, action: str, max_attempts: int) -> None:
+    address = request.client.host if request.client else "unknown"
+    enforce_rate_limit_key(f"ip:{action}:{address}", max_attempts)
+
+
+def enforce_user_rate_limit(user_id: int, action: str, max_attempts: int) -> None:
+    """Limit costly authenticated operations per account, across client IPs."""
+    enforce_rate_limit_key(f"user:{int(user_id)}:{action}", max_attempts)
 
 
 def get_current_user(
@@ -425,6 +438,11 @@ def root():
         "storage_backend": "postgresql" if database_url else "sqlite",
         "persistent_storage": bool(database_url),
         "cross_device_memory": bool(database_url),
+        "llm_provider_enabled": provider_configured(),
+        "chat_provider_enabled": provider_configured("chat"),
+        "code_provider_enabled": provider_configured("code"),
+        "reasoning_model": CHAT_MODEL if provider_configured("chat") else ("local_swin_transformer" if transformer_model is not None else None),
+        "coding_model": CODE_MODEL if provider_configured("code") else ("local_swin_transformer" if transformer_model is not None else None),
         "code_quality_guard": True,
         "version": app.version,
     }
@@ -440,10 +458,13 @@ def health():
         "wikipedia_articles": knowledge.wiki_articles,
         "wikipedia_passages": len(knowledge.wiki_entries),
         "vision_enabled": False,
-        "llm_provider_enabled": False,
-        "reasoning_model": "local_swin_transformer" if transformer_model is not None else None,
+        "llm_provider_enabled": provider_configured(),
+        "chat_provider_enabled": provider_configured("chat"),
+        "code_provider_enabled": provider_configured("code"),
+        "reasoning_model": CHAT_MODEL if provider_configured("chat") else ("local_swin_transformer" if transformer_model is not None else None),
+        "coding_model": CODE_MODEL if provider_configured("code") else ("local_swin_transformer" if transformer_model is not None else None),
         "agent_engine": "swin-local-agent",
-        "external_model_api": False,
+        "external_model_api": provider_configured(),
         "storage_backend": "postgresql" if database_url else "sqlite",
         "persistent_storage": bool(database_url),
         "cross_device_memory": bool(database_url),
@@ -564,6 +585,7 @@ def code_assist(
     user: dict = Depends(get_current_user),
 ):
     """Research a coding task and return a generated, statically checked draft."""
+    enforce_user_rate_limit(int(user["id"]), "code_assist", 5)
     started_at = time.perf_counter()
     session_id = request.session_id.strip()
     recent_turns = (
@@ -675,6 +697,7 @@ def generate_complete_project(
     user: dict = Depends(get_current_user),
 ):
     """Create a deterministic local starter scaffold without external model providers."""
+    enforce_user_rate_limit(int(user["id"]), "code_project", 8)
     started_at = time.perf_counter()
     enforce_auth_rate_limit(http_request, f"project:{user['id']}", 8)
     try:
@@ -756,6 +779,7 @@ def delete_memory_facts(
 
 @app.post("/chat")
 def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
+    enforce_user_rate_limit(int(user["id"]), "chat", 12)
     started_at = time.perf_counter()
     message = request.message.strip()
     session_id = request.session_id.strip()
