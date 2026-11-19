@@ -1350,7 +1350,7 @@ class MainActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            isHorizontallyScrolling = true
+            setHorizontallyScrolling(true)
             isVerticalScrollBarEnabled = false
             setPadding(chatDp(9), chatDp(12), chatDp(12), chatDp(12))
             background = ColorDrawable(Color.TRANSPARENT)
