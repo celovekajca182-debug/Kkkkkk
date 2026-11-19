@@ -72,7 +72,8 @@ class AssistantCoreTests(unittest.TestCase):
                 "snippet": "Документация описывает текущий API.",
                 "source_type": "Официальный источник",
             }],
-            tokenizer=WordTokenizer(),\n            block_size=512,
+            tokenizer=WordTokenizer(),
+            block_size=512,
         )
         self.assertIn("Пользователь пишет приложение на Python", prompt)
         self.assertIn("Документация описывает текущий API", prompt)
