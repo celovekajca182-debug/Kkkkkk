@@ -353,51 +353,73 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
         prompt_parts.append(f"Пользователь: {message}\nSWIN:")
         prompt = "\n".join(prompt_parts)
         try:
-            answer = transformer_model.generate(
+            generated_answer = transformer_model.generate(
                 prompt,
                 max_new_tokens=160,
                 temperature=0.0,
                 top_k=1,
                 stop_at_newline=True,
             ).strip()
-            answer = answer.split("\nПользователь:", 1)[0].strip()
-            if not answer or looks_like_garbage(answer):
+            generated_answer = generated_answer.split("\nПользователь:", 1)[0].strip()
+            generation_valid = bool(generated_answer) and not looks_like_garbage(generated_answer)
+            if generation_valid:
+                answer = generated_answer
+                response_mode = "byte_transformer"
+                response_source = "собственные веса SWIN Transformer"
+            else:
                 answer = (
-                    "Я пока не могу надёжно ответить на этот вопрос: текущая версия моей "
-                    "языковой модели иногда генерирует бессвязный текст. Попробуй задать "
-                    "вопрос по-другому или спросить о программировании и Godot."
+                    "Я пока не могу надёжно ответить на этот вопрос: моя текущая модель "
+                    "не сформировала связный текст. Попробуй уточнить вопрос или спросить "
+                    "о программировании, Android либо Godot."
                 )
+                response_mode = "safe_fallback"
+                response_source = "защита от бессвязной генерации"
             turns = remember_turn(memory_key, message, answer)
             elapsed = max(time.perf_counter() - started_at, 0.001)
-            try:
-                from transformer import ByteTokenizer
-
-                generated_bytes = len(ByteTokenizer.encode(answer))
-            except Exception:
-                generated_bytes = len(answer.encode("utf-8"))
-            return {
+            response = {
                 "answer": answer,
-                "mode": "byte_transformer",
-                "source": "собственные веса SWIN Transformer",
+                "mode": response_mode,
+                "source": response_source,
                 "confidence": None,
                 "memory_turns": turns,
                 "generation_ms": round(elapsed * 1000, 1),
-                "generation_bytes_per_second": round(generated_bytes / elapsed, 1),
             }
+            if generation_valid:
+                try:
+                    from transformer import ByteTokenizer
+                    generated_bytes = len(ByteTokenizer.encode(generated_answer))
+                except Exception:
+                    generated_bytes = len(generated_answer.encode("utf-8"))
+                response["generation_bytes_per_second"] = round(generated_bytes / elapsed, 1)
+            return response
         except Exception as error:
             print(f"Transformer generation error: {error}")
 
     if rnn_model is not None:
         prompt = f"Пользователь: {message}\nSWIN:"
-        generated = rnn_model.generate(prompt, length=220, temperature=0.75)
-        answer = generated[len(prompt):].split("\n", 1)[0].strip()
-        if not answer:
-            answer = "Пока не смог продолжить текст. Добавь больше проверенных примеров для обучения."
+        try:
+            generated = rnn_model.generate(prompt, length=220, temperature=0.75)
+            generated_answer = generated[len(prompt):].split("\n", 1)[0].strip()
+        except Exception as error:
+            print(f"RNN generation error: {error}")
+            generated_answer = ""
+        if generated_answer and not looks_like_garbage(generated_answer):
+            answer = generated_answer
+            response_mode = "character_rnn"
+            response_source = "собственные веса SWIN RNN"
+        else:
+            answer = (
+                "Я пока не могу надёжно ответить на этот вопрос: в моей базе знаний "
+                "нет подходящего материала, а генерация получилась бессвязной. "
+                "Попробуй уточнить тему или задать вопрос по Godot, Python либо Android."
+            )
+            response_mode = "safe_fallback"
+            response_source = "защита от бессвязной генерации"
         turns = remember_turn(memory_key, message, answer)
         return {
             "answer": answer,
-            "mode": "character_rnn",
-            "source": "собственные веса SWIN RNN",
+            "mode": response_mode,
+            "source": response_source,
             "confidence": None,
             "memory_turns": turns,
             "generation_ms": round((time.perf_counter() - started_at) * 1000, 1),
