@@ -398,7 +398,9 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
 
     small_talk = safe_small_talk(message)
     if small_talk is not None:
-        turns = remember_turn(memory_key, message, small_talk)
+        turns = record_chat_turn(
+            memory_key, int(user["id"]), session_id, message, small_talk
+        )
         return {
             "answer": small_talk,
             "mode": "safe_small_talk",
