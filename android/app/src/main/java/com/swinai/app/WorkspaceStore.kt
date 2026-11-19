@@ -227,12 +227,34 @@ internal class WorkspaceStore(context: Context, email: String) {
     private fun normalizeName(raw: String, kind: String): String {
         val name = raw.trim()
         require(name.isNotBlank()) { "Укажи название." }
+        if (kind == "file") {
+            require(name.length <= 180) { "Путь файла не должен превышать 180 символов." }
+            require(!name.startsWith("/") && !name.contains('\\\\') && !name.contains(':') && !name.any { it.code == 0 }) {
+                "Недопустимый путь файла."
+            }
+            val parts = name.split("/")
+            require(parts.size <= 5 && parts.none { it.isBlank() || it == "." || it == ".." }) {
+                "Путь может содержать максимум пять безопасных уровней."
+            }
+            val allowedHiddenFiles = setOf(".gitignore", ".env.example")
+            for (part in parts) {
+                require(part.length <= 64 && (!part.startsWith(".") || part in allowedHiddenFiles)) {
+                    "Недопустимое имя файла или скрытая директория."
+                }
+                require(part.matches(Regex("[\\p{L}\\p{N}._ -]+"))) {
+                    "В имени файла разрешены буквы, цифры, пробел, точка, дефис и подчёркивание."
+                }
+            }
+            require(parts.none { it.lowercase() in setOf(".git", ".idea", ".gradle", ".venv", "node_modules", "__pycache__") }) {
+                "Служебные папки не сохраняются в рабочем пространстве."
+            }
+            return parts.joinToString("/")
+        }
         require(name.length <= 64) { "Название не должно превышать 64 символа." }
         require(name != "." && name != "..") { "Недопустимое название." }
         require(name.matches(Regex("[\\p{L}\\p{N}._ -]+"))) {
             "Разрешены буквы, цифры, пробел, точка, дефис и подчёркивание."
         }
-        if (kind == "file") require(!name.startsWith(".")) { "Имя файла не должно начинаться с точки." }
         return name
     }
 
