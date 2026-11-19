@@ -28,6 +28,7 @@ class TrainingCorpusTests(unittest.TestCase):
             root = Path(directory)
             (root / "base.txt").write_text("Открытый текстовый документ для обучения.", encoding="utf-8")
             (root / "web.txt").write_text("Дополнительный веб-документ на русском языке.", encoding="utf-8")
+            (root / "wiki.txt").write_text("Статья Википедии о космосе и науке.", encoding="utf-8")
             (root / "knowledge.json").write_text(
                 '[{"title":"Тест","question":"Что это?","answer":"Это проверенный ответ."}]',
                 encoding="utf-8",
@@ -36,11 +37,16 @@ class TrainingCorpusTests(unittest.TestCase):
                 '{"question":"Как проверить?","answer":"Запусти тесты."}\n',
                 encoding="utf-8",
             )
-            pretrain = build_pretraining_corpus(root / "base.txt", root / "web.txt")
+            pretrain = build_pretraining_corpus(
+                root / "base.txt",
+                root / "web.txt",
+                root / "wiki.txt",
+            )
             sft = build_instruction_corpus(
                 root / "knowledge.json", root / "dialogue.jsonl", root / "missing.jsonl"
             )
         self.assertIn("Дополнительный веб-документ", pretrain)
+        self.assertIn("Статья Википедии", pretrain)
         self.assertNotIn("Что это?", pretrain)
         self.assertIn("Пользователь: Что это?", sft)
         self.assertNotIn("веб-документ", sft)
