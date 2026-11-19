@@ -261,6 +261,22 @@ def search_documentation(
     return [entry[2] for entry in ranked[:max(1, min(max_results, 10))]]
 
 
+def looks_like_garbage_code(code: str) -> bool:
+    """Reject obvious byte-level decoding failures before returning a code draft."""
+    value = (code or "").strip()
+    if not value or "\ufffd" in value:
+        return True
+    letters = [char.lower() for char in value if char.isalpha()]
+    if len(letters) >= 10:
+        diversity = len(set(letters)) / len(letters)
+        dominant = max(letters.count(char) for char in set(letters)) / len(letters)
+        if diversity < 0.12 or dominant > 0.52:
+            return True
+        if re.search(r"(.)\1{5,}", "".join(letters)):
+            return True
+    return False
+
+
 def _extract_code(text: str) -> str:
     fence = chr(96) * 3
     pattern = re.escape(fence) + r"(?:[a-zA-Z0-9_+.#-]+)?\s*\n(.*?)" + re.escape(fence)
@@ -751,7 +767,20 @@ def run_code_assist(
 
     activity.append({"stage": "generation", "status": "done", "label": "Черновик кода получен"})
     code = _extract_code(raw)
-    validation = validate_code(code, language)
+    if looks_like_garbage_code(code):
+        code = ""
+        validation = {
+            "status": "failed",
+            "method": "generation_quality_guard",
+            "message": "Генерация содержит признаки бессвязного текста и не будет выдана как код.",
+        }
+        activity.append({
+            "stage": "quality_guard",
+            "status": "failed",
+            "label": "Бессвязная генерация отклонена до показа пользователю",
+        })
+    else:
+        validation = validate_code(code, language)
 
     # One conservative repair pass is accepted only if its static result improves.
     if validation["status"] == "failed" and code:
@@ -804,14 +833,19 @@ def run_code_assist(
             "message": "К результату приложены найденные материалы для ручной сверки." if sources else "Нечего сверять: поисковые материалы не получены.",
         },
     }
-    status = "empty_generation" if not code else (
-        "draft_validated" if validation["status"] == "passed" else "draft_needs_review"
+    status = (
+        "generation_rejected" if not code and validation.get("method") == "generation_quality_guard"
+        else "empty_generation" if not code
+        else "draft_validated" if validation["status"] == "passed"
+        else "draft_needs_review"
     )
     result = {
         "status": status,
         "language": language,
         "summary": (
-            "Черновик создан и прошёл доступную статическую проверку."
+            "Модель выдала бессвязный текст вместо кода. Результат отклонён; уточни задачу или используй близкий проверенный пример."
+            if status == "generation_rejected"
+            else "Черновик создан и прошёл доступную статическую проверку."
             if validation["status"] == "passed"
             else "Черновик создан; результат проверки ограничен или требует исправления."
         ),
