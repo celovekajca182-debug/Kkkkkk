@@ -161,7 +161,7 @@ def localized_fallback(language: str) -> str:
         "de": "Ich kann derzeit noch keine zuverlässige Antwort in dieser Sprache geben. Bitte präzisiere die Frage oder wähle eine andere Antwortsprache.",
         "es": "Todavía no puedo generar una respuesta fiable en este idioma. Aclara la pregunta o elige otro idioma de respuesta.",
         "fr": "Je ne peux pas encore produire une réponse fiable dans cette langue. Précisez la question ou choisissez une autre langue.",
-        "zh": "我目前还不能可靠地用这种语言回答。请 уточнить问题或选择其他回复语言。",
+        "zh": "我目前还不能可靠地用这种语言回答。请补充问题细节或选择其他回复语言。",
         "uk": "Поки не можу надійно сформувати відповідь цією мовою. Уточни запитання або вибери іншу мову відповіді.",
     }
     return messages[normalized]
