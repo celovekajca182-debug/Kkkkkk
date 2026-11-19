@@ -22,7 +22,6 @@ import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
-import java.util.UUID
 import java.security.MessageDigest
 import kotlin.concurrent.thread
 
