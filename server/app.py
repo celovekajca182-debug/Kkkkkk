@@ -340,7 +340,7 @@ def code_assist(
         assistant_text = result.get("summary", "Результат режима разработки.")
         generated_code = result.get("code", "")
         if generated_code:
-            assistant_text += "\\n\\n" + generated_code
+            assistant_text += "\n\n" + generated_code
         chat_history.save_turn(
             int(user["id"]),
             request.session_id.strip(),
