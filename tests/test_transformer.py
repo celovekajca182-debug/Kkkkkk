@@ -48,6 +48,47 @@ class ByteBPETokenizerTests(unittest.TestCase):
         self.assertIsNotNone(tokenizer.pad_token_id)
         self.assertLess(len(tokenizer.encode(line * 20)), len((line * 20).encode("utf-8")))
 
+    def test_bpe_generation_masks_control_tokens_and_stops_on_eos(self):
+        tokenizer = BPEByteTokenizer.from_texts(
+            ["Русский текст и код Python. " * 80],
+            vocab_size=512,
+        )
+        model = SWINTransformer(
+            block_size=48,
+            d_model=32,
+            n_heads=4,
+            n_layers=1,
+            dropout=0.0,
+            vocab_size=tokenizer.vocab_size,
+        )
+        model.tokenizer = tokenizer
+        model.eval()
+
+        def fake_prefill(token_ids):
+            logits = torch.zeros(
+                1,
+                token_ids.shape[1],
+                tokenizer.vocab_size,
+                device=token_ids.device,
+            )
+            logits[0, -1, tokenizer.pad_token_id] = 1000
+            logits[0, -1, tokenizer.unk_token_id] = 999
+            logits[0, -1, tokenizer.eos_token_id] = 100
+            return logits, None
+
+        def unexpected_incremental(*args, **kwargs):
+            raise AssertionError("EOS should stop generation before incremental decoding")
+
+        model.forward_with_cache = fake_prefill
+        model.forward_incremental = unexpected_incremental
+        result = model.generate(
+            "Пользователь: Привет\\nSWIN:",
+            max_new_tokens=8,
+            stop_at_newline=False,
+            no_repeat_ngram_size=0,
+        )
+        self.assertEqual(result, "")
+
     def test_bpe_checkpoint_round_trip_preserves_tokenizer_and_logits(self):
         text = ("Русский язык и Python code sample. " * 120)
         tokenizer = BPEByteTokenizer.from_texts([text], vocab_size=512)
