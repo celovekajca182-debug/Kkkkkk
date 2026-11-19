@@ -7,7 +7,7 @@ class ChatSafetyTests(unittest.TestCase):
     def test_small_talk_returns_russian_answer(self):
         answer = safe_small_talk("как дела?")
         self.assertIsNotNone(answer)
-        self.assertIn("готов помогать", answer)
+        self.assertIn("готов помочь", answer)
 
     def test_greeting_is_handled_without_model_generation(self):
         answer = safe_small_talk("Привет!")
@@ -22,6 +22,13 @@ class ChatSafetyTests(unittest.TestCase):
 
     def test_unicode_replacement_character_is_rejected(self):
         self.assertTrue(looks_like_garbage("непонятный текст � после генерации"))
+
+    def test_long_unbroken_model_noise_is_rejected(self):
+        sample = "оооооеиеооооооооооииоооеооееиеио"
+        self.assertTrue(looks_like_garbage(sample))
+
+    def test_repeated_vowel_stream_is_rejected(self):
+        self.assertTrue(looks_like_garbage("оооооооооооооооооооооооо"))
 
     def test_normal_russian_sentence_is_not_rejected(self):
         sample = "Для этого открой настройки приложения и проверь подключение к серверу."
