@@ -25,7 +25,7 @@ class EvaluateTransformerTests(unittest.TestCase):
 
     def test_coherent_russian_paragraph_passes_heuristics(self):
         result = assess_generated_text(
-            "Функция принимает аргументы, выполняет инструкции и возвращает результат. "
+            "Функция принимает аргументы, выполняет блок кода и возвращает результат. "
             "Проверь входные данные и обработай возможные ошибки."
         )
         self.assertEqual(result["status"], "passed")
@@ -34,8 +34,32 @@ class EvaluateTransformerTests(unittest.TestCase):
         result = assess_generated_text(
             "def add(a, b):\n    return a + b\n",
             require_code=True,
+            required_function="add",
         )
         self.assertEqual(result["status"], "passed")
+
+    def test_valid_python_with_wrong_function_name_fails_required_probe(self):
+        result = assess_generated_text(
+            "def plus(a, b):\n    return a + b\n",
+            require_code=True,
+            required_function="add",
+        )
+        self.assertEqual(result["status"], "failed")
+
+    def test_valid_python_with_wrong_operation_fails_required_probe(self):
+        result = assess_generated_text(
+            "def add(a, b):\n    return a - b\n",
+            require_code=True,
+            required_function="add",
+        )
+        self.assertEqual(result["status"], "failed")
+
+    def test_russian_answer_must_cover_prompt_concepts(self):
+        result = assess_generated_text(
+            "Это простой и удобный инструмент для выполнения разных задач.",
+            required_concepts=[["функц"], ["код"]],
+        )
+        self.assertEqual(result["status"], "failed")
 
     def test_python_code_without_valid_syntax_fails(self):
         result = assess_generated_text("def add(:\n    return 1", require_code=True)
@@ -43,7 +67,7 @@ class EvaluateTransformerTests(unittest.TestCase):
 
     def test_model_passes_only_when_text_and_code_probes_pass(self):
         model = FakeModel([
-            "Функция получает значения, выполняет действия и возвращает вычисленный результат. "
+            "Функция получает значения, выполняет блок кода и возвращает вычисленный результат. "
             "Она помогает разделять программу на небольшие повторно используемые части.",
             "Сначала прочитай полный Traceback, найди последнюю строку и определи тип ошибки. "
             "Затем проверь значение переменной и место вызова функции.",
