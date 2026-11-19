@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import statistics
 import time
 import urllib.error
@@ -49,6 +48,9 @@ def request_json(
     except urllib.error.HTTPError as error:
         status = error.code
         raw = error.read(1_000_000)
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        return 0, {"error": str(error)[:300]}, elapsed_ms
     elapsed_ms = (time.perf_counter() - started) * 1000
     try:
         data = json.loads(raw.decode("utf-8")) if raw else {}
@@ -133,7 +135,7 @@ def main() -> int:
             answer = str(chat.get("answer", ""))
             record(
                 "qwen_chat_arithmetic",
-                status == 200 and bool(re.search(r"(?<!\\d)437(?!\\d)", answer)),
+                status == 200 and "437" in answer,
                 f"HTTP {status}; answer={answer[:180]!r}",
                 latency,
             )
