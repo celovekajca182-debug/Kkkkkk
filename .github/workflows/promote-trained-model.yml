@@ -91,7 +91,7 @@ jobs:
       - name: Re-run the current quality gate on the candidate checkpoint
         run: |
           python server/evaluate_transformer.py \
-            --checkpoint "\${{ steps.verify.outputs.checkpoint }}" \
+            --checkpoint "${{ steps.verify.outputs.checkpoint }}" \
             --json-output artifact/evaluation-current.json
 
       - name: Publish the evaluated SWIN checkpoint
