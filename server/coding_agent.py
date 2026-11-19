@@ -204,62 +204,8 @@ def _search_query(task: str, language: str) -> str:
 def search_documentation(
     task: str, language: str, max_results: int = 7
 ) -> list[dict[str, str]]:
-    """Search the broad public web; extract full text only from primary doc hosts."""
-    try:
-        from ddgs import DDGS
-    except ImportError:
-        return []
-
-    try:
-        client = DDGS(timeout=8)
-        raw_results = client.text(
-            _search_query(task, language),
-            region="wt-wt",
-            safesearch="moderate",
-            max_results=max(1, min(max_results * 3, 21)),
-            backend="auto",
-        )
-    except Exception:
-        return []
-
-    ranked: list[tuple[int, int, dict[str, str]]] = []
-    seen: set[str] = set()
-    for position, item in enumerate(raw_results or []):
-        if not isinstance(item, dict):
-            continue
-        url = str(item.get("href", "")).strip()
-        if not _safe_search_url(url):
-            continue
-        parsed = urlparse(url)
-        canonical = (parsed.hostname or "").lower() + parsed.path.rstrip("/")
-        if canonical in seen:
-            continue
-        seen.add(canonical)
-        score, source_type = _source_quality(url, language)
-        snippet = re.sub(r"\s+", " ", str(item.get("body", ""))).strip()[:650]
-        title = re.sub(r"\s+", " ", str(item.get("title", "Источник из интернета"))).strip()
-        # Only request full-page extraction from allow-listed primary references.
-        if score == 3 and len(snippet) < 180 and len(ranked) < 2:
-            try:
-                extracted = client.extract(url, fmt="text_markdown")
-                if isinstance(extracted, dict):
-                    page_text = re.sub(
-                        r"\s+", " ", str(extracted.get("content", ""))
-                    ).strip()
-                    if page_text:
-                        snippet = page_text[:1100]
-            except Exception:
-                pass
-        ranked.append((score, -position, {
-            "title": title[:180] or "Источник из интернета",
-            "url": url[:700],
-            "snippet": snippet or "Поисковик нашёл страницу; подробный фрагмент недоступен.",
-            "source_type": source_type,
-            "trust": "primary" if score == 3 else ("community" if score == 2 else "unverified"),
-        }))
-
-    ranked.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
-    return [entry[2] for entry in ranked[:max(1, min(max_results, 10))]]
+    """Remote documentation search is disabled; local code examples remain available."""
+    return []
 
 
 def looks_like_garbage_code(code: str) -> bool:
