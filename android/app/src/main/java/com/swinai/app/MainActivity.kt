@@ -663,7 +663,7 @@ class MainActivity : Activity() {
                 addCopyAction(copyText, "Копировать код", "Код скопирован")
             }
         } else if (!user) {
-            val codeFence = Regex("(?s)\`\`\`([A-Za-z0-9_+#.-]*)\\s*\\n(.*?)\`\`\`")
+            val codeFence = Regex("(?s)```([A-Za-z0-9_+#.-]*)\\s*\\n(.*?)```")
             val matches = codeFence.findAll(value).toList()
             if (matches.isEmpty()) {
                 addBody(value)
