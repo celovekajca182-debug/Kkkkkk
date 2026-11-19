@@ -342,11 +342,11 @@ def migrate_sqlite_to_postgres(sqlite_path: str | Path, database_url: str) -> di
             email = str(row["email"]).strip().lower()
             db.execute(
                 """
-                INSERT INTO users(id, email, password_hash, created_at)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO users(email, password_hash, created_at)
+                VALUES (%s, %s, %s)
                 ON CONFLICT (email) DO NOTHING
                 """,
-                (int(row["id"]), email, row["password_hash"], int(row["created_at"])),
+                (email, row["password_hash"], int(row["created_at"]))
             )
             current = db.execute(
                 "SELECT id FROM users WHERE lower(email) = %s",
@@ -382,12 +382,10 @@ def migrate_sqlite_to_postgres(sqlite_path: str | Path, database_url: str) -> di
                 continue
             db.execute(
                 """
-                INSERT INTO chat_messages(id, user_id, session_id, role, content, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO NOTHING
+                INSERT INTO chat_messages(user_id, session_id, role, content, created_at)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
                 (
-                    int(row["id"]),
                     mapped_user_id,
                     row["session_id"],
                     row["role"],
@@ -397,25 +395,6 @@ def migrate_sqlite_to_postgres(sqlite_path: str | Path, database_url: str) -> di
             )
             copied_messages += 1
 
-        # Explicitly inserted identity values must advance the sequences.
-        db.execute(
-            """
-            SELECT setval(
-                pg_get_serial_sequence('users', 'id'),
-                COALESCE(MAX(id), 1),
-                MAX(id) IS NOT NULL
-            ) FROM users
-            """
-        )
-        db.execute(
-            """
-            SELECT setval(
-                pg_get_serial_sequence('chat_messages', 'id'),
-                COALESCE(MAX(id), 1),
-                MAX(id) IS NOT NULL
-            ) FROM chat_messages
-            """
-        )
         db.execute(
             "INSERT INTO swin_migration_log(migration_key, applied_at) VALUES (%s, %s)",
             ("sqlite-legacy-v1", int(time.time())),
