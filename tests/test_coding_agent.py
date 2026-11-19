@@ -64,6 +64,7 @@ class CodingAgentTests(unittest.TestCase):
             [{"title": "Docs", "url": "https://docs.python.org/3/", "snippet": "Документация " * 100}],
             "Существующий код проекта " * 30,
             block_size=256,
+            response_language="ru",
         )
         self.assertLessEqual(len(prompt.encode("utf-8")), 252)
         self.assertIn("User:", prompt)
@@ -184,9 +185,24 @@ class CodingAgentTests(unittest.TestCase):
         self.assertEqual(result["status"], "draft_validated")
         self.assertIn("def add", result["code"])
         self.assertNotIn("activity", result)
-        self.assertIn("ЗАДАЧА", model.last_prompt)
+        self.assertIn("User:", model.last_prompt)
+        self.assertEqual(result["response_language"], "ru")
         self.assertEqual(result["verification"]["syntax"]["status"], "passed")
         self.assertEqual(result["verification"]["runtime_tests"]["status"], "not_run")
+
+    def test_code_assist_localizes_results_to_explicit_response_language(self):
+        result = run_code_assist(
+            "Write a Python function that adds two numbers.",
+            "python",
+            FakeModel(),
+            research_web=False,
+            response_language="de",
+        )
+        self.assertEqual(result["response_language"], "de")
+        self.assertTrue(result["summary"].startswith("Ein Entwurf"))
+        self.assertEqual(len(result["plan"]), 3)
+        self.assertTrue(result["warnings"])
+        self.assertTrue(all("Static validation" not in item for item in result["warnings"]))
 
     def test_activity_can_be_shown_without_private_reasoning(self):
         model = FakeModel()
