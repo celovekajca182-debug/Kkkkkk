@@ -123,6 +123,49 @@ class ChatHistoryStore:
             for row in reversed(rows)
         ]
 
+    def sessions(self, user_id: int, limit: int = 50) -> list[dict[str, Any]]:
+        """List recent conversations for one account, with safe display previews."""
+        safe_limit = max(1, min(int(limit), 100))
+        with self._connect() as db:
+            rows = db.execute(
+                """
+                SELECT
+                    session_id,
+                    (
+                        SELECT content FROM chat_messages AS first_message
+                        WHERE first_message.user_id = messages.user_id
+                          AND first_message.session_id = messages.session_id
+                          AND first_message.role = 'user'
+                        ORDER BY first_message.id ASC LIMIT 1
+                    ) AS title,
+                    (
+                        SELECT content FROM chat_messages AS last_message
+                        WHERE last_message.user_id = messages.user_id
+                          AND last_message.session_id = messages.session_id
+                        ORDER BY last_message.id DESC LIMIT 1
+                    ) AS preview,
+                    MAX(created_at) AS updated_at,
+                    COUNT(*) AS message_count,
+                    MAX(id) AS last_message_id
+                FROM chat_messages AS messages
+                WHERE user_id = ?
+                GROUP BY session_id
+                ORDER BY last_message_id DESC
+                LIMIT ?
+                """,
+                (int(user_id), safe_limit),
+            ).fetchall()
+        return [
+            {
+                "session_id": row["session_id"],
+                "title": (row["title"] or "Новый чат")[:120],
+                "preview": (row["preview"] or "")[:220],
+                "updated_at": int(row["updated_at"]),
+                "message_count": int(row["message_count"]),
+            }
+            for row in rows
+        ]
+
     def turns(
         self, user_id: int, session_id: str, limit: int = 6
     ) -> list[tuple[str, str]]:
