@@ -195,6 +195,11 @@ class KnowledgeBase:
         if not query_terms or not entries:
             return []
         total_docs = max(1, len(entries))
+        total_weight = sum(
+            math.log(1.0 + (total_docs + 1.0) /
+                     (document_frequency.get(token, 0) + 0.5))
+            for token in query_terms
+        ) or 1.0
         ranked = []
         for item, document_tokens in zip(entries, index):
             matched = set(query_terms).intersection(document_tokens)
@@ -208,11 +213,6 @@ class KnowledgeBase:
                 tf = document_tokens[token]
                 weighted += idf * (1.0 + math.log(tf))
                 covered += idf
-            total_weight = sum(
-                math.log(1.0 + (total_docs + 1.0) /
-                         (document_frequency.get(token, 0) + 0.5))
-                for token in query_terms
-            ) or 1.0
             score = (covered / total_weight) * min(1.0, weighted / max(covered, 0.001))
             if score >= min_score:
                 ranked.append((score, item))
