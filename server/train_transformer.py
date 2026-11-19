@@ -424,15 +424,9 @@ def main():
         Path(args.coding_train),
         Path(args.project_examples),
     )
-    sft_validation = join_corpus(
-        *[
-            f"Пользователь: {question}\nSWIN: {answer}"
-            for question, answer in sft_validation_examples
-        ]
-    )
-
+    # Never build the vocabulary from held-out validation examples.
     tokenizer = CharTokenizer.from_texts(
-        [pretrain_train, pretrain_validation, sft_train, sft_validation],
+        [pretrain_train, sft_train],
         max_vocab=4096,
     )
     print(f"Unicode character vocabulary: {tokenizer.vocab_size:,} tokens")
@@ -468,9 +462,6 @@ def main():
     )
 
     # Этап 2: instruction tuning на парах вопрос/ответ с тем же символьным словарём.
-    sft_train_data, sft_val_data = build_tensor_splits(
-        sft_train, sft_validation, args.block_size, tokenizer
-    )
     sft_train_windows = build_sft_windows(sft_examples, tokenizer, args.block_size)
     sft_validation_windows = build_sft_windows(
         sft_validation_examples,
@@ -485,8 +476,8 @@ def main():
     )
     model = train_stage(
         model,
-        sft_train_data,
-        sft_val_data,
+        None,
+        None,
         args.sft_epochs,
         args.batch_size,
         args.block_size,
