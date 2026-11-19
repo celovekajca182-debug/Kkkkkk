@@ -3152,9 +3152,8 @@ class MainActivity : Activity() {
 
     private fun sendMessage() {
         val message = chatInput.text.toString().trim()
-        val imagePayloads = pendingImageAttachments.map { it.dataUrl }
-        if (message.isEmpty() && imagePayloads.isEmpty()) return
-        if (imagePayloads.isNotEmpty()) {
+        if (message.isEmpty() && pendingImageAttachments.isEmpty()) return
+        if (pendingImageAttachments.isNotEmpty()) {
             appendChatMessage(
                 "assistant",
                 "Фото пока не анализируются: собственная мультимодальная модель SWIN ещё не готова. " +
@@ -3196,52 +3195,19 @@ class MainActivity : Activity() {
         val requestCodeMode = isCodeMode
         val selectedResponseLanguage = responseLanguage
         val requestSessionId = sessionId
-        val userDisplayMessage = if (imagePayloads.isNotEmpty()) {
-            (message + "\n").takeIf { message.isNotBlank() }.orEmpty() +
-                "📷 ${imagePayloads.size} фото прикреплено"
-        } else message
-
         chatInput.text.clear()
         removeWelcomePanel()
-        appendChatMessage("user", userDisplayMessage)
-        cacheLocalMessage("user", userDisplayMessage, requestSessionId)
-        pendingImageAttachments.forEach { it.thumbnail.recycle() }
-        pendingImageAttachments.clear()
-        renderImageAttachments()
+        appendChatMessage("user", message)
+        cacheLocalMessage("user", message, requestSessionId)
         val pendingReply = appendChatMessage(
             "assistant",
-            when {
-                imagePayloads.isNotEmpty() -> "Рассматриваю фотографии…"
-                requestCodeMode -> "Готовлю результат…"
-                else -> "Думаю…"
-            }
+            if (requestCodeMode) "Проверяю локальные инструменты…" else "Думаю…"
         )
         sendButton.isEnabled = false
 
         thread {
             try {
-                if (imagePayloads.isNotEmpty()) {
-                    val imageArray = JSONArray()
-                    imagePayloads.forEach { imageArray.put(it) }
-                    val response = requestJson(
-                        "/vision/analyze",
-                        JSONObject()
-                            .put("question", message)
-                            .put("session_id", requestSessionId)
-                            .put("response_language", selectedResponseLanguage)
-                            .put("images", imageArray),
-                        token
-                    )
-                    val answer = response.optString("answer", "Модель не вернула описание фотографии.")
-                    runOnUiThread {
-                        if (sessionId == requestSessionId) {
-                            pendingReply?.let { chatMessages.removeView(it) }
-                            appendChatMessage("assistant", answer)
-                            cacheLocalMessage("assistant", answer, requestSessionId)
-                        }
-                        sendButton.isEnabled = true
-                    }
-                } else if (requestCodeMode) {
+                if (requestCodeMode) {
                     val payload = JSONObject()
                         .put("task", message)
                         .put("language", selectedCodingLanguage)
