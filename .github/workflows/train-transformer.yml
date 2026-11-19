@@ -1,6 +1,10 @@
 name: Train SWIN Transformer
 
 on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/train-transformer.yml"
   workflow_dispatch:
     inputs:
       pretrain_epochs:
