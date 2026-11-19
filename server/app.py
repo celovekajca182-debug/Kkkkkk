@@ -143,6 +143,7 @@ class ChatRequest(BaseModel):
 class CodeAssistRequest(BaseModel):
     task: str = Field(min_length=1, max_length=4000)
     language: str = Field(default="auto", min_length=1, max_length=32)
+    response_language: str = Field(default="auto", min_length=2, max_length=16)
     research_web: bool = True
     show_activity: bool = False
     project_context: str = Field(default="", max_length=4000)
@@ -451,6 +452,7 @@ def code_assist(
             research_web=request.research_web,
             project_context=project_context,
             show_activity=request.show_activity,
+            response_language=request.response_language,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
