@@ -47,12 +47,12 @@ jobs:
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
           test -n "$AAPT"
           "$AAPT" dump badging "$APK" | tee /tmp/apk-badging.txt
-          grep -q "package: name='com.swinai.app' versionCode='20' versionName='0.12.0'" /tmp/apk-badging.txt
+          grep -q "package: name='com.swinai.app' versionCode='21' versionName='0.13.0'" /tmp/apk-badging.txt
 
       - name: Upload installable APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SWIN-AI-Android-APK-v0.12.0
+          name: SWIN-AI-Android-APK-v0.13.0
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -60,12 +60,12 @@ jobs:
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: swin-ai-v0.12.0
-          name: SWIN AI Android v0.12.0
+          tag_name: swin-ai-v0.13.0
+          name: SWIN AI Android v0.13.0
           body: |
-            SWIN AI Android build v0.12.0.
+            SWIN AI Android build v0.13.0.
 
-            Adds multi-file project generation, nested source folders, ZIP import/export, image attachments, vision analysis, FineWiki retrieval, and optional GPT-6 reasoning.
+            Adds provider-free local agent workflows, local Godot/Python/Web scaffolds, nested project folders, and ZIP import/export. Photo understanding is disabled until an in-house vision model passes quality evaluation.
 
             Install the APK on Android 6.0 or newer. This is a debug-signed test build.
           files: android/app/build/outputs/apk/debug/app-debug.apk
