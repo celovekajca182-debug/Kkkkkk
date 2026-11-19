@@ -74,6 +74,18 @@ def _completion_url(base_url: str) -> str:
     return base + "/v1/chat/completions"
 
 
+def _remove_private_reasoning(content: str) -> str:
+    """Return only the final answer from Qwen Thinking-style completions."""
+    value = content or ""
+    closing_tag = value.rfind("</think>")
+    if closing_tag >= 0:
+        value = value[closing_tag + len("</think>"):]
+    opening_tag = value.find("<think>")
+    if opening_tag >= 0:
+        value = value[:opening_tag]
+    return value.strip()
+
+
 def generate_model_text(
     prompt: str,
     *,
@@ -128,9 +140,12 @@ def generate_model_text(
                 for part in content
                 if isinstance(part, dict)
             )
-        if not isinstance(content, str) or not content.strip():
-            raise ValueError("Provider returned an empty assistant message.")
-        return content.strip()
+        if not isinstance(content, str):
+            raise ValueError("Provider returned no assistant content.")
+        final_answer = _remove_private_reasoning(content)
+        if not final_answer:
+            raise ValueError("Provider returned reasoning without a final answer.")
+        return final_answer
     except (UnicodeDecodeError, json.JSONDecodeError, KeyError, IndexError, TypeError) as error:
         raise RuntimeError("SWIN inference provider returned an invalid response.") from error
     except ValueError as error:
