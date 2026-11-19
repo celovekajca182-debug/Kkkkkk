@@ -218,7 +218,7 @@ SWIN AI может помогать с программированием, от�
 
 Runtime inference is split by task: [Qwen3-4B-Instruct-2507](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) handles general chat, explanations and reasoning, while [Qwen2.5-Coder-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct) handles code generation and repair. Both model IDs can be overridden through environment variables.
 
-The Android APK and the Render API do not contain these model weights. Configure an OpenAI-compatible GPU inference gateway using `SWIN_LLM_BASE_URL` and `SWIN_LLM_API_KEY`; see [.env.example](.env.example) and [docs/model-routing.md](docs/model-routing.md). The Qwen routes activate when the base URL is set. Otherwise, SWIN retains its existing local checkpoint/retrieval fallback.
+The Android APK and the Render API do not contain these model weights. Configure separate OpenAI-compatible GPU endpoints using `SWIN_CHAT_BASE_URL` and `SWIN_CODE_BASE_URL`, or use a shared gateway with `SWIN_LLM_BASE_URL`; see [.env.example](.env.example) and [docs/model-routing.md](docs/model-routing.md). The Qwen routes activate when the base URL is set. Otherwise, SWIN retains its existing local checkpoint/retrieval fallback.
 
 The existing `/code/assist` validation remains in place: generated code is statically checked and is not executed by the API. The provider key stays server-side and is never sent to the Android app.
 
