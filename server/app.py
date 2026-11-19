@@ -2,7 +2,7 @@ import os
 import re
 import time
 import urllib.request
-from collections import OrderedDict, defaultdict, deque
+from collections import Counter, OrderedDict, defaultdict, deque
 from pathlib import Path
 from threading import Lock
 from typing import Literal
@@ -211,7 +211,7 @@ def safe_small_talk(message: str) -> str | None:
     if re.fullmatch(r"(привет|здравствуй|здравствуйте|добрый день|доброе утро|добрый вечер|хай|салют)", normalized):
         return "Привет! Я на связи. Напиши, что нужно сделать или объяснить."
     if re.fullmatch(r"(как дела|как ты|как поживаешь|ты как)", normalized):
-        return "Всё нормально — я готов помогать. Пока мои собственные языковые навыки ещё ограничены, но я могу отвечать по темам, которым меня уже обучили."
+        return "Всё хорошо. Я на связи и готов помочь. Что будем делать?"
     if re.fullmatch(r"(спасибо|спс|благодарю)", normalized):
         return "Пожалуйста! Если понадобится, продолжим."
     if re.fullmatch(r"(пока|до свидания|до встречи)", normalized):
@@ -220,18 +220,43 @@ def safe_small_talk(message: str) -> str | None:
 
 
 def looks_like_garbage(text: str) -> bool:
-    """Reject obvious byte-level model failures instead of showing random characters."""
+    """Reject malformed and structurally implausible natural-language output."""
     value = text.strip()
     if len(value) < 3 or "\ufffd" in value:
         return True
+
     letters = [ch.lower() for ch in value if ch.isalpha()]
     if len(letters) >= 8:
-        if re.search(r"(.)\1{5,}", "".join(letters)):
+        compact = "".join(letters)
+        if re.search(r"(.)\1{5,}", compact):
             return True
         if len(set(letters)) / len(letters) < 0.18:
             return True
+
     words = re.findall(r"[a-zа-яё]{2,}", value.lower())
-    return len(letters) >= 16 and len(words) < 2
+    if len(letters) >= 16 and len(words) < 2:
+        return True
+
+    # A chat answer should not be a long unbroken token or a repeated vowel stream.
+    if len(letters) >= 24:
+        if re.search(r"[аеёиоуыэюя]{4,}", value.lower()):
+            return True
+        trigrams = [
+            "".join(letters[index:index + 3])
+            for index in range(len(letters) - 2)
+        ]
+        if len(trigrams) >= 20:
+            counts = Counter(trigrams)
+            diversity = len(counts) / len(trigrams)
+            dominant = counts.most_common(1)[0][1] / len(trigrams)
+            if diversity < 0.36 or dominant > 0.16:
+                return True
+        vowel_count = sum(char in "аеёиоуыэюяaeiou" for char in letters)
+        vowel_ratio = vowel_count / len(letters)
+        if vowel_ratio > 0.68 or vowel_ratio < 0.12:
+            return True
+
+    return False
 
 
 def remember_turn(session_id: str, message: str, answer: str) -> int:
@@ -380,27 +405,51 @@ def code_assist(
 ):
     """Research a coding task and return a generated, statically checked draft."""
     started_at = time.perf_counter()
+    session_id = request.session_id.strip()
+    recent_turns = (
+        chat_history.turns(int(user["id"]), session_id, limit=2)
+        if session_id else []
+    )
+
+    # Carry a compact, account-scoped project context into coding requests.
+    # The model has a short context window, so recent decisions are summarized
+    # rather than blindly appending entire previous code files.
+    context_parts: list[str] = []
+    supplied_context = request.project_context.strip()
+    if supplied_context:
+        context_parts.append("Контекст пользователя: " + supplied_context[:150])
+    if recent_turns:
+        memory_lines = []
+        for previous_task, previous_answer in recent_turns[-2:]:
+            answer_summary = previous_answer.split("[SWIN_CODE_BLOCK]", 1)[0].strip()
+            memory_lines.append(
+                f"Запрос: {previous_task[:70]} | Итог: {answer_summary[:90]}"
+            )
+        context_parts.append("ПАМЯТЬ СЕССИИ: " + " || ".join(memory_lines))
+    project_context = "\n".join(context_parts)[:4000]
+
     try:
         result = run_code_assist(
             task=request.task,
             language=request.language,
             transformer_model=transformer_model,
             research_web=request.research_web,
-            project_context=request.project_context,
+            project_context=project_context,
             show_activity=request.show_activity,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     result["elapsed_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
     result["model_loaded"] = transformer_model is not None
-    if request.session_id.strip():
+    result["memory_context_turns"] = len(recent_turns)
+    if session_id:
         assistant_text = result.get("summary", "Результат режима разработки.")
         generated_code = result.get("code", "")
         if generated_code:
             assistant_text += "\n\n[SWIN_CODE_BLOCK]\n" + generated_code
         chat_history.save_turn(
             int(user["id"]),
-            request.session_id.strip(),
+            session_id,
             request.task.strip(),
             assistant_text[:120000],
         )
