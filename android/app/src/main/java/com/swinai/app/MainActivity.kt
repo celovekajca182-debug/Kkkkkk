@@ -20,6 +20,7 @@ import android.widget.*
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.UUID
 import kotlin.concurrent.thread
 
@@ -52,6 +53,7 @@ class MainActivity : Activity() {
     private var userEmail = ""
     private var sessionId = ""
     private var endpointValue: String = ""
+    private var themeMode: String = "light"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,6 +62,7 @@ class MainActivity : Activity() {
 
         val preferences = getPreferences(MODE_PRIVATE)
         endpointValue = preferences.getString("api_base", "https://kkkkkk-02vl.onrender.com") ?: "https://kkkkkk-02vl.onrender.com"
+        themeMode = preferences.getString("theme_mode", "light") ?: "light"
         authToken = SecureTokenStore.read(this)
         userEmail = preferences.getString("account_email", "") ?: ""
         if (authToken != null && userEmail.isNotBlank()) {
@@ -468,6 +471,41 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun chatColor(key: String): Int {
+        val dark = themeMode == "dark"
+        return when (key) {
+            "background" -> if (dark) Color.rgb(20, 24, 22) else Color.rgb(250, 248, 243)
+            "panel" -> if (dark) Color.rgb(31, 37, 33) else Color.rgb(255, 254, 251)
+            "ink" -> if (dark) Color.rgb(235, 239, 233) else Color.rgb(43, 42, 38)
+            "muted" -> if (dark) Color.rgb(157, 169, 159) else Color.rgb(126, 122, 113)
+            "accent" -> if (dark) Color.rgb(190, 224, 132) else Color.rgb(190, 111, 82)
+            "stroke" -> if (dark) Color.rgb(57, 68, 60) else Color.rgb(224, 219, 210)
+            "assistantBubble" -> if (dark) Color.rgb(31, 37, 33) else Color.rgb(255, 254, 251)
+            "userBubble" -> if (dark) Color.rgb(43, 55, 45) else Color.rgb(237, 230, 219)
+            "codeBubble" -> if (dark) Color.rgb(23, 29, 25) else Color.rgb(243, 241, 235)
+            "assistantLabel" -> if (dark) Color.rgb(222, 165, 133) else Color.rgb(177, 105, 79)
+            "userLabel" -> if (dark) Color.rgb(191, 213, 156) else Color.rgb(139, 105, 84)
+            else -> chatColor("ink")
+        }
+    }
+
+    private fun showThemeSettings() {
+        val options = arrayOf("Светлая", "Тёмная")
+        val selected = if (themeMode == "dark") 1 else 0
+        AlertDialog.Builder(this)
+            .setTitle("Оформление SWIN AI")
+            .setSingleChoiceItems(options, selected) { dialog, which ->
+                themeMode = if (which == 1) "dark" else "light"
+                getPreferences(MODE_PRIVATE).edit()
+                    .putString("theme_mode", themeMode)
+                    .apply()
+                dialog.dismiss()
+                showChatScreen()
+            }
+            .setNegativeButton("Закрыть", null)
+            .show()
+    }
+
     private fun chatDp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun chatBg(color: Int, radius: Int, stroke: Int? = null) = GradientDrawable().apply {
@@ -477,7 +515,7 @@ class MainActivity : Activity() {
         if (stroke != null) setStroke(chatDp(1), stroke)
     }
 
-    private fun appendChatMessage(role: String, value: String, code: Boolean = false): LinearLayout? {
+    private fun appendChatMessage(role: String, value: String, code: Boolean = false, copyText: String? = null): LinearLayout? {
         if (!::chatMessages.isInitialized) return null
         val user = role == "user"
         val row = LinearLayout(this).apply {
@@ -488,26 +526,41 @@ class MainActivity : Activity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(chatDp(14), chatDp(11), chatDp(14), chatDp(11))
-            background = if (user) chatBg(Color.rgb(237, 230, 219), 17)
-                else chatBg(Color.rgb(255, 254, 251), 16, Color.rgb(231, 226, 217))
+            background = if (user) chatBg(chatColor("userBubble"), 17)
+                else chatBg(chatColor("assistantBubble"), 16, chatColor("stroke"))
         }
         val tag = makeText(if (user) "ВЫ" else "SWIN", 10f,
-            if (user) Color.rgb(139, 105, 84) else Color.rgb(177, 105, 79)).apply {
+            if (user) chatColor("userLabel") else chatColor("assistantLabel")).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             letterSpacing = 0.12f
         }
-        val body = makeText(value, if (code) 13f else 15f, Color.rgb(43, 42, 38)).apply {
+        val body = makeText(value, if (code) 13f else 15f, chatColor("ink")).apply {
             setLineSpacing(chatDp(3).toFloat(), 1f)
             setTextIsSelectable(true)
             if (code) {
                 typeface = Typeface.create("monospace", Typeface.NORMAL)
-                background = chatBg(Color.rgb(243, 241, 235), 9)
+                background = chatBg(chatColor("codeBubble"), 9)
                 setPadding(chatDp(9), chatDp(9), chatDp(9), chatDp(9))
             }
         }
         card.addView(tag)
         card.addView(View(this), LinearLayout.LayoutParams(1, chatDp(5)))
         card.addView(body)
+        if (!user && !copyText.isNullOrBlank()) {
+            val copyButton = TextView(this).apply {
+                text = "⧉  Копировать код"
+                textSize = 12f
+                setTextColor(chatColor("accent"))
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                setPadding(0, chatDp(10), chatDp(2), 0)
+                setOnClickListener {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("SWIN AI code", copyText))
+                    Toast.makeText(this@MainActivity, "Код скопирован", Toast.LENGTH_SHORT).show()
+                }
+            }
+            card.addView(copyButton, LinearLayout.LayoutParams(-1, chatDp(30)))
+        }
         val maxW = (resources.displayMetrics.widthPixels * 0.88f).toInt()
         row.addView(card, LinearLayout.LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT))
         chatMessages.addView(row, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -541,14 +594,14 @@ class MainActivity : Activity() {
     }
 
     private fun showChatScreen() {
-        val bg = Color.rgb(250, 248, 243)
-        val ink = Color.rgb(43, 42, 38)
-        val muted = Color.rgb(126, 122, 113)
-        val accent = Color.rgb(190, 111, 82)
+        val bg = chatColor("background")
+        val ink = chatColor("ink")
+        val muted = chatColor("muted")
+        val accent = chatColor("accent")
         window.statusBarColor = bg
         window.navigationBarColor = bg
-        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
-            View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        window.decorView.systemUiVisibility = if (themeMode == "dark") 0 else
+            (View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -585,7 +638,16 @@ class MainActivity : Activity() {
             setTextColor(ink)
             setOnClickListener { showChatSettings() }
         }
+        val themeButton = TextView(this).apply {
+            text = if (themeMode == "dark") "☀" else "☾"
+            textSize = 21f
+            gravity = Gravity.CENTER
+            setTextColor(ink)
+            contentDescription = "Сменить тему"
+            setOnClickListener { showThemeSettings() }
+        }
         header.addView(codeMode, LinearLayout.LayoutParams(-2, chatDp(40)))
+        header.addView(themeButton, LinearLayout.LayoutParams(chatDp(40), chatDp(44)))
         header.addView(settings, LinearLayout.LayoutParams(chatDp(42), chatDp(44)))
         root.addView(header)
 
@@ -598,7 +660,7 @@ class MainActivity : Activity() {
         codingPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(chatDp(10), chatDp(7), chatDp(10), chatDp(7))
-            background = chatBg(Color.rgb(255, 254, 251), 14, Color.rgb(231, 226, 217))
+            background = chatBg(chatColor("panel"), 14, chatColor("stroke"))
         }
         codeModeButton = makeButton("Параметры кода") {
             isCodeMode = !isCodeMode
@@ -643,7 +705,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(chatDp(8), chatDp(6), chatDp(6), chatDp(6))
-            background = chatBg(Color.rgb(255, 254, 251), 22, Color.rgb(224, 219, 210))
+            background = chatBg(chatColor("panel"), 22, chatColor("stroke"))
             elevation = chatDp(2).toFloat()
         }
         val plus = TextView(this).apply {
@@ -685,7 +747,46 @@ class MainActivity : Activity() {
         chatLog = makeText("", 14f)
         updateCodingControls()
         setContentView(root)
-        appendChatMessage("assistant", "Привет! Я SWIN AI. Чем могу помочь?")
+        loadChatHistory()
+    }
+
+    private fun loadChatHistory() {
+        val token = authToken
+        if (token.isNullOrBlank() || sessionId.isBlank()) {
+            appendChatMessage("assistant", "Привет! Я SWIN AI. Чем могу помочь?")
+            return
+        }
+        thread {
+            try {
+                val encodedSession = URLEncoder.encode(sessionId, "UTF-8")
+                val response = requestJson(
+                    "/memory/history?session_id=$encodedSession",
+                    JSONObject(),
+                    token,
+                    method = "GET"
+                )
+                val messages = response.optJSONArray("messages")
+                runOnUiThread {
+                    chatMessages.removeAllViews()
+                    if (messages == null || messages.length() == 0) {
+                        appendChatMessage("assistant", "Привет! Я SWIN AI. Чем могу помочь?")
+                    } else {
+                        for (index in 0 until messages.length()) {
+                            val item = messages.optJSONObject(index) ?: continue
+                            val role = item.optString("role", "assistant")
+                            val content = item.optString("content", "")
+                            if (content.isNotBlank()) appendChatMessage(role, content)
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                runOnUiThread {
+                    if (chatMessages.childCount == 0) {
+                        appendChatMessage("assistant", "Привет! Я SWIN AI. Чем могу помочь?")
+                    }
+                }
+            }
+        }
     }
 
     private fun updateCodingControls() {
@@ -862,7 +963,7 @@ class MainActivity : Activity() {
                             lastGeneratedCode = code
                             copyCodeButton.isEnabled = true
                         }
-                        appendChatMessage("assistant", output.toString(), code.isNotBlank())
+                        appendChatMessage("assistant", output.toString(), code.isNotBlank(), code.takeIf { it.isNotBlank() })
                         sendButton.isEnabled = true
                     }
                 } else {
