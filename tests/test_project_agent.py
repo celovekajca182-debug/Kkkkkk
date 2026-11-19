@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from project_agent import ProjectBundleError, _safe_relative_path, build_project_prompt, generate_project_bundle, generate_local_project_scaffold
+from project_agent import ProjectBundleError, _safe_relative_path, build_project_prompt, generate_project_bundle, generate_local_project_scaffold, validate_project_manifest
 
 
 class ProjectAgentTests(unittest.TestCase):
@@ -120,6 +120,32 @@ class ProjectAgentTests(unittest.TestCase):
                 "python",
                 max_files=2,
             )
+
+    def test_project_manifest_validator_checks_every_file(self):
+        result = validate_project_manifest([
+            {"path": "src/main.py", "language": "python", "content": "def main():\\n    return 1\\n"},
+            {"path": "README.md", "language": "other", "content": "# Demo\\n"},
+        ])
+        self.assertEqual(result["file_count"], 2)
+        self.assertEqual(result["failed_files"], 0)
+        self.assertEqual(result["runtime"], "not_run")
+        self.assertFalse(result["execution_performed"])
+
+    def test_project_manifest_validator_rejects_unsafe_and_duplicate_paths(self):
+        with self.assertRaises(ProjectBundleError):
+            validate_project_manifest([{"path": "../escape.py", "content": "print(1)"}])
+        with self.assertRaisesRegex(ProjectBundleError, "Повторяется путь"):
+            validate_project_manifest([
+                {"path": "src/main.py", "content": "print(1)"},
+                {"path": "SRC/MAIN.py", "content": "print(2)"},
+            ])
+
+    def test_project_manifest_validator_marks_invalid_python(self):
+        result = validate_project_manifest([
+            {"path": "main.py", "content": "def broken(:\\n"}
+        ])
+        self.assertEqual(result["status"], "needs_review")
+        self.assertEqual(result["failed_files"], 1)
 
     def test_project_prompt_contains_safety_rules_and_context(self):
         prompt = build_project_prompt(
