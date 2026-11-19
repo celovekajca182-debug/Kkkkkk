@@ -865,7 +865,7 @@ class MainActivity : Activity() {
                             val role = item.optString("role", "assistant")
                             val content = item.optString("content", "")
                             if (content.isNotBlank()) {
-                                val codeMarker = "\\n\\n[SWIN_CODE_BLOCK]\\n"
+                                val codeMarker = "\n\n[SWIN_CODE_BLOCK]\n"
                                 val markerIndex = content.indexOf(codeMarker)
                                 if (role == "assistant" && markerIndex >= 0) {
                                     val summary = content.substring(0, markerIndex).trim()
@@ -1066,10 +1066,10 @@ class MainActivity : Activity() {
                             copyCodeButton.isEnabled = true
                         }
                         if (code.isNotBlank()) {
-                            val summary = output.toString().substringBefore("\\n\\nКОД:\\n").trim()
+                            val summary = output.toString().substringBefore("\n\nКОД:\n").trim()
                             appendChatMessage("assistant", summary)
                             appendChatMessage("assistant", code, true, code)
-                            cacheLocalMessage("assistant", summary + "\\n\\n[SWIN_CODE_BLOCK]\\n" + code)
+                            cacheLocalMessage("assistant", summary + "\n\n[SWIN_CODE_BLOCK]\n" + code)
                         } else {
                             val outputText = output.toString()
                             appendChatMessage("assistant", outputText)
