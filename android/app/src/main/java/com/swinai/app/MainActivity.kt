@@ -56,6 +56,7 @@ class MainActivity : Activity() {
     private var sessionId = ""
     private var endpointValue: String = ""
     private var themeMode: String = "system"
+    private var responseLanguage: String = "auto"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,6 +66,7 @@ class MainActivity : Activity() {
         val preferences = getPreferences(MODE_PRIVATE)
         endpointValue = preferences.getString("api_base", "https://kkkkkk-02vl.onrender.com") ?: "https://kkkkkk-02vl.onrender.com"
         themeMode = preferences.getString("theme_mode", "system") ?: "system"
+        responseLanguage = preferences.getString("response_language", "auto") ?: "auto"
         authToken = SecureTokenStore.read(this)
         userEmail = preferences.getString("account_email", "") ?: ""
         if (authToken != null && userEmail.isNotBlank()) {
@@ -697,17 +699,54 @@ class MainActivity : Activity() {
     }
 
     private fun showChatSettings() {
-        val options = arrayOf("Адрес сервера", "Очистить историю и память", "Выйти из аккаунта")
+        val options = arrayOf(
+            "Язык ответа",
+            "Адрес сервера",
+            "Очистить историю и память",
+            "Выйти из аккаунта"
+        )
         AlertDialog.Builder(this)
             .setTitle("Настройки SWIN AI")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> showEndpointSettings()
-                    1 -> confirmClearChatMemory()
-                    2 -> logout()
+                    0 -> showResponseLanguageSettings()
+                    1 -> showEndpointSettings()
+                    2 -> confirmClearChatMemory()
+                    3 -> logout()
                 }
             }
             .setNegativeButton("Закрыть", null)
+            .show()
+    }
+
+    private fun showResponseLanguageSettings() {
+        val codes = arrayOf("auto", "ru", "en", "de", "es", "fr", "zh", "uk")
+        val labels = arrayOf(
+            "Автоопределение по сообщению",
+            "Русский",
+            "English",
+            "Deutsch",
+            "Español",
+            "Français",
+            "中文",
+            "Українська"
+        )
+        val selected = codes.indexOf(responseLanguage).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Язык ответа SWIN")
+            .setSingleChoiceItems(labels, selected) { dialog, which ->
+                responseLanguage = codes[which]
+                getPreferences(MODE_PRIVATE).edit()
+                    .putString("response_language", responseLanguage)
+                    .apply()
+                dialog.dismiss()
+                Toast.makeText(
+                    this,
+                    "Язык ответа: " + labels[which],
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .setNegativeButton("Отмена", null)
             .show()
     }
 
@@ -1072,6 +1111,7 @@ class MainActivity : Activity() {
         val includeCodingActivity = showCodingActivity
         val selectedProjectContext = projectContextInput.text.toString().take(4000)
         val requestCodeMode = isCodeMode
+        val selectedResponseLanguage = responseLanguage
 
         chatInput.text.clear()
         appendChatMessage("user", message)
@@ -1207,13 +1247,17 @@ class MainActivity : Activity() {
                 } else {
                     val response = requestJson(
                         "/chat",
-                        JSONObject().put("message", message).put("session_id", sessionId),
+                        JSONObject()
+                            .put("message", message)
+                            .put("session_id", sessionId)
+                            .put("response_language", selectedResponseLanguage),
                         token
                     )
                     val answer = response.optString("answer", "Сервер вернул пустой ответ.")
                     val elapsed = response.optDouble("generation_ms", -1.0)
                     val mode = response.optString("mode", "unknown")
-                    val meta = if (elapsed >= 0) "\n[$mode • $elapsed мс]" else "\n[$mode]"
+                    val language = response.optString("response_language", selectedResponseLanguage)
+                    val meta = if (elapsed >= 0) "\n[$mode • $language • $elapsed мс]" else "\n[$mode • $language]"
                     runOnUiThread {
                         pendingReply?.let { chatMessages.removeView(it) }
                         appendChatMessage("assistant", "$answer$meta")
