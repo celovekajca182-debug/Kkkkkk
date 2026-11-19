@@ -58,6 +58,8 @@ jobs:
           python prepare_corpus.py \
             --web-documents 2500 \
             --web-max-chars 1500000 \
+            --wiki-documents 1500 \
+            --wiki-max-chars 900000 \
             --max-doc-chars 2500 \
             --oasst-max-pairs 3500
           python prepare_coding_data.py --max-train 700 --max-validation 160
@@ -91,6 +93,7 @@ jobs:
             server/models/evaluation.json
             server/data/dataset_manifest.json
             server/data/mbpp_manifest.json
+            server/data/DATASET_SOURCES.md
           if-no-files-found: error
 
       - name: Publish SWIN model checkpoint
