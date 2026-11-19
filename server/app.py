@@ -17,7 +17,8 @@ from assistant_core import (
     memory_category,
     memory_key_for,
     parse_memory_command,
-    search_web,
+    search_web_many,
+    select_relevant_memories,
     should_research,
     validate_memory_value,
 )
@@ -619,7 +620,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
 
     # Search on explicit lookup requests and time-sensitive questions.
     research_requested = should_research(message)
-    references = search_web(message, max_results=6) if research_requested else []
+    references = search_web_many(message, max_results=6) if research_requested else []
     local_match = knowledge.search(message) if response_language == "ru" else None
 
     if local_match is not None and not research_requested:
@@ -632,7 +633,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             reasoning_mode="curated_retrieval",
         )
 
-    persistent_memories = chat_history.memories(user_id, limit=30)
+    persistent_memories = select_relevant_memories(\n        message, chat_history.memories(user_id, limit=50), limit=8\n    )
     if transformer_model is not None:
         tokenizer = getattr(transformer_model, "tokenizer", None)
         block_size = int(getattr(transformer_model, "block_size", 512))
