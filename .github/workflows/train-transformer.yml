@@ -88,6 +88,7 @@ jobs:
           path: |
             server/models/swin-transformer.pt
             server/models/swin-transformer-pretrain.pt
+            server/models/evaluation.json
             server/data/dataset_manifest.json
             server/data/mbpp_manifest.json
           if-no-files-found: error
