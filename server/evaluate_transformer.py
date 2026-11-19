@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from transformer import load_transformer
+from language_support import format_training_prompt
 
 
 def assess_generated_text(
@@ -88,9 +89,16 @@ def assess_generated_text(
                     if not has_add_return:
                         reasons.append("функция add должна возвращать сумму a и b")
     else:
+        has_cjk = any(
+            "\u4e00" <= char <= "\u9fff"
+            or "\u3040" <= char <= "\u30ff"
+            for char in value
+        )
         words = re.findall(r"[A-Za-zА-Яа-яЁё]{2,}", value)
-        if len(words) < 4:
+        if len(words) < 4 and not has_cjk:
             reasons.append("недостаточно слов для связного ответа")
+        if has_cjk and len(letters) < 10:
+            reasons.append("слишком короткий ответ на CJK-языке")
         if required_concepts:
             lowered = value.casefold()
             missing = [
@@ -109,32 +117,82 @@ def assess_generated_text(
 
 
 def evaluate_model(model) -> dict[str, Any]:
-    """Evaluate fixed prompts; no training samples are reused as expected answers."""
-    probes = [
+    """Evaluate Russian plus every curated chat language and a deterministic Python task."""
+    text_probes = [
         {
             "name": "russian_explanation",
-            "prompt": "Пользователь: Объясни простыми словами, что такое функция в Python.\nSWIN:",
-            "require_code": False,
+            "language": "ru",
+            "question": "Объясни простыми словами, что такое функция в Python.",
             "required_concepts": [["функц"], ["код"], ["результат", "задач"]],
         },
         {
             "name": "russian_debugging",
-            "prompt": "Пользователь: Как по шагам найти причину ошибки TypeError в Python?\nSWIN:",
-            "require_code": False,
+            "language": "ru",
+            "question": "Как по шагам найти причину ошибки TypeError в Python?",
             "required_concepts": [["ошиб"], ["тип", "значен"], ["строк", "traceback"]],
         },
         {
-            "name": "python_function",
-            "prompt": "Пользователь: Напиши функцию Python add(a, b), которая возвращает сумму двух чисел. Верни полный код.\nSWIN:",
-            "require_code": True,
-            "required_function": "add",
+            "name": "english_explanation",
+            "language": "en",
+            "question": "Explain briefly what a function in Python is.",
+            "required_concepts": [["function"], ["code"], ["return", "result"]],
+        },
+        {
+            "name": "german_explanation",
+            "language": "de",
+            "question": "Erkläre kurz, was eine Funktion in Python ist.",
+            "required_concepts": [["funktion"], ["code"], ["ergebnis", "rückgabe", "zurück"]],
+        },
+        {
+            "name": "spanish_explanation",
+            "language": "es",
+            "question": "Explica brevemente qué es una función en Python.",
+            "required_concepts": [["función", "funcion"], ["código", "codigo"], ["resultado", "devolver"]],
+        },
+        {
+            "name": "french_explanation",
+            "language": "fr",
+            "question": "Explique brièvement ce qu'est une fonction en Python.",
+            "required_concepts": [["fonction"], ["code"], ["résultat", "resultat", "renvoie"]],
+        },
+        {
+            "name": "chinese_explanation",
+            "language": "zh",
+            "question": "请用简单的话解释 Python 中的函数是什么。",
+            "required_concepts": [["函数"], ["代码"], ["结果", "返回"]],
+        },
+        {
+            "name": "ukrainian_explanation",
+            "language": "uk",
+            "question": "Поясни простими словами, що таке функція в Python.",
+            "required_concepts": [["функц"], ["код"], ["результат", "поверта"]],
+        },
+        {
+            "name": "portuguese_explanation",
+            "language": "pt",
+            "question": "Explique brevemente o que é uma função em Python.",
+            "required_concepts": [["função", "funcao"], ["código", "codigo"], ["resultado", "retorna"]],
+        },
+        {
+            "name": "italian_explanation",
+            "language": "it",
+            "question": "Spiega brevemente cos'è una funzione in Python.",
+            "required_concepts": [["funzione"], ["codice"], ["risultato", "restituisce"]],
+        },
+        {
+            "name": "japanese_explanation",
+            "language": "ja",
+            "question": "Pythonの関数とは何か、簡単に説明してください。",
+            "required_concepts": [["関数"], ["コード"], ["結果", "返"]],
         },
     ]
+
     results = []
-    for probe in probes:
+    for probe in text_probes:
         try:
+            prompt = format_training_prompt(probe["question"], probe["language"])
             generated = model.generate(
-                probe["prompt"],
+                prompt,
                 max_new_tokens=180,
                 temperature=0.0,
                 top_k=1,
@@ -142,9 +200,7 @@ def evaluate_model(model) -> dict[str, Any]:
             )
             result = assess_generated_text(
                 generated,
-                require_code=probe["require_code"],
-                required_concepts=probe.get("required_concepts"),
-                required_function=probe.get("required_function"),
+                required_concepts=probe["required_concepts"],
             )
         except Exception as error:
             result = {
@@ -152,23 +208,63 @@ def evaluate_model(model) -> dict[str, Any]:
                 "reasons": [f"ошибка генерации: {str(error)[:180]}"],
                 "preview": "",
             }
-        results.append({"name": probe["name"], **result})
+        results.append({
+            "name": probe["name"],
+            "language": probe["language"],
+            **result,
+        })
+
+    code_probe = {
+        "name": "python_function",
+        "language": "en",
+    }
+    try:
+        code_prompt = format_training_prompt(
+            "Write a Python function add(a, b) that returns the sum of two numbers. Return the complete code.",
+            "en",
+        )
+        generated_code = model.generate(
+            code_prompt,
+            max_new_tokens=180,
+            temperature=0.0,
+            top_k=1,
+            stop_at_newline=False,
+        )
+        code_result = assess_generated_text(
+            generated_code,
+            require_code=True,
+            required_function="add",
+        )
+    except Exception as error:
+        code_result = {
+            "status": "failed",
+            "reasons": [f"ошибка генерации: {str(error)[:180]}"],
+            "preview": "",
+        }
+    results.append({**code_probe, **code_result})
 
     passed_text = sum(
         item["status"] == "passed"
         for item in results
         if item["name"] != "python_function"
     )
-    code_passed = next(
-        item["status"] == "passed"
-        for item in results
-        if item["name"] == "python_function"
-    )
-    accepted = passed_text == 2 and code_passed
+    total_text = len(text_probes)
+    code_passed = results[-1]["status"] == "passed"
+    passed_languages = [
+        item["language"] for item in results
+        if item["name"] != "python_function" and item["status"] == "passed"
+    ]
+    failed_languages = [
+        item["language"] for item in results
+        if item["name"] != "python_function" and item["status"] != "passed"
+    ]
+    accepted = passed_text == total_text and code_passed
     return {
         "accepted": accepted,
         "passed_text_probes": passed_text,
-        "total_text_probes": 2,
+        "total_text_probes": total_text,
+        "passed_languages": passed_languages,
+        "failed_languages": failed_languages,
         "python_code_probe_passed": code_passed,
         "probes": results,
     }
