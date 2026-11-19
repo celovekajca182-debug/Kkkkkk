@@ -266,7 +266,7 @@ class PostgresChatHistoryStore:
                     MAX(id) AS last_message_id
                 FROM chat_messages AS messages
                 WHERE user_id = %s
-                GROUP BY session_id
+                GROUP BY user_id, session_id
                 ORDER BY last_message_id DESC
                 LIMIT %s
                 """,
