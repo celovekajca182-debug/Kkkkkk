@@ -1,8 +1,8 @@
-"""Сбор небольшого проверяемого русскоязычного корпуса из открытых датасетов.
+"""Сбор небольших проверяемых корпусов для многоязычного SWIN AI.
 
 Источники:
-- FineWeb2-HQ / rus_Cyrl: потоковый отбор документов, без скачивания всего архива.
-- OpenAssistant/oasst1: пары промпт/ответ с русским языком и прошедшими review.
+- FineWeb2-HQ: русские и ограниченные многоязычные потоковые подвыборки.
+- OpenAssistant/oasst1: сбалансированные пары промпт/ответ для десяти языков.
 
 Скрипт не загружает чужие веса и не вызывает внешние AI API.
 """
@@ -416,7 +416,7 @@ def write_jsonl(path: Path, rows: list[dict]):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Prepare capped Russian training samples from open datasets.")
+    parser = argparse.ArgumentParser(description="Prepare capped multilingual training samples from open datasets.")
     parser.add_argument("--output-dir", default="data")
     parser.add_argument("--web-documents", type=int, default=1500)
     parser.add_argument("--web-max-chars", type=int, default=800000)
