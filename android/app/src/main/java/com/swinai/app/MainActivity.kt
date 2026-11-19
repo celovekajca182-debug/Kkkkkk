@@ -1149,6 +1149,107 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun quickActionCard(
+        icon: String,
+        title: String,
+        description: String,
+        action: () -> Unit
+    ): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(13), chatDp(13), chatDp(13), chatDp(13))
+            background = chatBg(chatColor("panel"), 15, chatColor("stroke"))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { action() }
+        }
+        card.addView(makeText(icon, 20f, chatColor("accent")).apply {
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        })
+        card.addView(makeText(title, 14f, chatColor("ink")).apply {
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setPadding(0, chatDp(7), 0, chatDp(2))
+        })
+        card.addView(makeText(description, 11f, chatColor("muted")))
+        return card
+    }
+
+    private fun focusComposer(prompt: String, coding: Boolean = false) {
+        if (coding) {
+            isCodeMode = true
+            updateCodingControls()
+            codeModeHeader?.text = "Код ✓"
+        }
+        chatInput.setText(prompt)
+        chatInput.setSelection(chatInput.text.length)
+        chatInput.requestFocus()
+        val inputMethod = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+        inputMethod.showSoftInput(chatInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    private fun showWelcomePanel() {
+        if (!::chatMessages.isInitialized) return
+        welcomePanel?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(4), chatDp(28), chatDp(4), chatDp(20))
+        }
+        val mark = TextView(this).apply {
+            text = "S"
+            textSize = 22f
+            gravity = Gravity.CENTER
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            setTextColor(chatColor("sendText"))
+            background = chatBg(chatColor("accent"), 17)
+        }
+        panel.addView(mark, LinearLayout.LayoutParams(chatDp(48), chatDp(48)))
+        panel.addView(makeText("Привет, я SWIN AI", 25f, chatColor("ink")).apply {
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            setPadding(0, chatDp(16), 0, chatDp(5))
+        })
+        panel.addView(makeText(
+            "Твой помощник для поиска информации, программирования и разбора сложных задач.",
+            14f,
+            chatColor("muted")
+        ).apply {
+            setLineSpacing(chatDp(3).toFloat(), 1f)
+            setPadding(0, 0, 0, chatDp(20))
+        })
+        val firstRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        firstRow.addView(quickActionCard(
+            "⌕", "Найти информацию", "Поиск в интернете и источники"
+        ) { focusComposer("Найди актуальную информацию о ") },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = chatDp(7) })
+        firstRow.addView(quickActionCard(
+            "</>", "Написать код", "Python, Godot и другие языки"
+        ) { focusComposer("Помоги написать код для Godot 4: ", coding = true) },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = chatDp(7) })
+        panel.addView(firstRow)
+        val secondRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        secondRow.addView(quickActionCard(
+            "✦", "Объяснить тему", "Понятно и по шагам"
+        ) { focusComposer("Объясни простыми словами: ") },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = chatDp(7) })
+        secondRow.addView(quickActionCard(
+            "▤", "Моя память", "Посмотреть сохранённые факты"
+        ) { showMemorySettings() },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = chatDp(7) })
+        panel.addView(secondRow, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = chatDp(12)
+        })
+        chatMessages.addView(panel, LinearLayout.LayoutParams(-1, -2))
+        welcomePanel = panel
+    }
+
+    private fun removeWelcomePanel() {
+        welcomePanel?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        welcomePanel = null
+    }
+
     private fun showChatScreen() {
         val bg = chatColor("background")
         val ink = chatColor("ink")
@@ -1168,11 +1269,28 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val brand = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        brand.addView(makeText("SWIN AI", 19f, ink).apply {
+        val brand = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val brandMark = TextView(this).apply {
+            text = "S"
+            textSize = 19f
+            gravity = Gravity.CENTER
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            setTextColor(chatColor("sendText"))
+            background = chatBg(accent, 13)
+        }
+        brand.addView(brandMark, LinearLayout.LayoutParams(chatDp(40), chatDp(40)))
+        val brandCopy = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(10), 0, 0, 0)
+        }
+        brandCopy.addView(makeText("SWIN AI", 18f, ink).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         })
-        brand.addView(makeText("Ваш AI-помощник", 11f, muted))
+        brandCopy.addView(makeText("Личный помощник · Русский", 10f, muted))
+        brand.addView(brandCopy)
         header.addView(brand, LinearLayout.LayoutParams(0, chatDp(52), 1f))
         val codeMode = TextView(this).apply {
             text = if (isCodeMode) "Код ✓" else "Код"
@@ -1180,31 +1298,53 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setTextColor(accent)
             setPadding(chatDp(14), 0, chatDp(14), 0)
-            background = chatBg(chatColor("codePill"), 18)
+            background = chatBg(chatColor("codePill"), 18, chatColor("stroke"))
             setOnClickListener {
                 isCodeMode = !isCodeMode
                 updateCodingControls()
                 text = if (isCodeMode) "Код ✓" else "Код"
             }
         }
-        val settings = TextView(this).apply {
-            text = "⋯"
-            textSize = 26f
+        codeModeHeader = codeMode
+        val memoryButton = TextView(this).apply {
+            text = "▤"
+            textSize = 18f
             gravity = Gravity.CENTER
             setTextColor(ink)
+            contentDescription = "Память SWIN"
+            background = chatBg(chatColor("panel"), 13, chatColor("stroke"))
+            setOnClickListener { showMemorySettings() }
+        }
+        val settings = TextView(this).apply {
+            text = "⋯"
+            textSize = 23f
+            gravity = Gravity.CENTER
+            setTextColor(ink)
+            contentDescription = "Настройки"
+            background = chatBg(chatColor("panel"), 13, chatColor("stroke"))
             setOnClickListener { showChatSettings() }
         }
         val themeButton = TextView(this).apply {
             text = if (isDarkTheme()) "☀" else "☾"
-            textSize = 21f
+            textSize = 20f
             gravity = Gravity.CENTER
             setTextColor(ink)
             contentDescription = "Сменить тему"
+            background = chatBg(chatColor("panel"), 13, chatColor("stroke"))
             setOnClickListener { showThemeSettings() }
         }
-        header.addView(codeMode, LinearLayout.LayoutParams(-2, chatDp(40)))
-        header.addView(themeButton, LinearLayout.LayoutParams(chatDp(40), chatDp(44)))
-        header.addView(settings, LinearLayout.LayoutParams(chatDp(42), chatDp(44)))
+        header.addView(codeMode, LinearLayout.LayoutParams(-2, chatDp(38)).apply {
+            marginEnd = chatDp(5)
+        })
+        header.addView(memoryButton, LinearLayout.LayoutParams(chatDp(38), chatDp(40)).apply {
+            marginStart = chatDp(3); marginEnd = chatDp(3)
+        })
+        header.addView(themeButton, LinearLayout.LayoutParams(chatDp(38), chatDp(40)).apply {
+            marginStart = chatDp(3); marginEnd = chatDp(3)
+        })
+        header.addView(settings, LinearLayout.LayoutParams(chatDp(38), chatDp(40)).apply {
+            marginStart = chatDp(3)
+        })
         root.addView(header)
 
         endpoint = makeEdit("HTTPS-адрес сервера",
@@ -1238,8 +1378,20 @@ class MainActivity : Activity() {
             cb.setPrimaryClip(ClipData.newPlainText("SWIN AI code", lastGeneratedCode))
             Toast.makeText(this, "Код скопирован", Toast.LENGTH_SHORT).show()
         }.apply { isEnabled = false }
+        codingPanel.addView(makeText("РЕЖИМ РАЗРАБОТКИ", 11f, accent).apply {
+            letterSpacing = 0.08f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setPadding(chatDp(3), 0, 0, chatDp(2))
+        })
+        codingPanel.addView(makeText(
+            "Опиши задачу и при желании добавь контекст проекта. SWIN подготовит код и покажет доступные проверки.",
+            11f,
+            muted
+        ).apply { setPadding(chatDp(3), 0, 0, chatDp(7)) })
         codingPanel.addView(languageSpinner, LinearLayout.LayoutParams(-1, chatDp(44)))
-        codingPanel.addView(projectContextInput, LinearLayout.LayoutParams(-1, -2))
+        codingPanel.addView(projectContextInput, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = chatDp(5)
+        })
         codingPanel.addView(activitySwitch, LinearLayout.LayoutParams(-1, chatDp(40)))
         codingPanel.addView(copyCodeButton, LinearLayout.LayoutParams(-1, chatDp(42)))
         root.addView(codingPanel, LinearLayout.LayoutParams(-1, -2).apply {
@@ -1250,6 +1402,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, chatDp(10), 0, chatDp(16))
         }
+        welcomePanel = null
         chatScroll = ScrollView(this).apply {
             isFillViewport = true
             isVerticalScrollBarEnabled = false
@@ -1265,14 +1418,26 @@ class MainActivity : Activity() {
             elevation = chatDp(2).toFloat()
         }
         val plus = TextView(this).apply {
-            text = "+"
-            textSize = 25f
+            text = "＋"
+            textSize = 23f
             gravity = Gravity.CENTER
             setTextColor(muted)
+            contentDescription = "Дополнительные действия"
             setOnClickListener {
-                isCodeMode = !isCodeMode
-                updateCodingControls()
-                codeMode.text = if (isCodeMode) "Код ✓" else "Код"
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Дополнительные действия")
+                    .setItems(arrayOf("Режим программирования", "Память SWIN", "Язык ответа")) { _, which ->
+                        when (which) {
+                            0 -> {
+                                isCodeMode = !isCodeMode
+                                updateCodingControls()
+                                codeMode.text = if (isCodeMode) "Код ✓" else "Код"
+                            }
+                            1 -> showMemorySettings()
+                            2 -> showResponseLanguageSettings()
+                        }
+                    }
+                    .show()
             }
         }
         chatInput = makeEdit("Напишите сообщение…",
@@ -1406,6 +1571,7 @@ class MainActivity : Activity() {
         }
         if (::chatInput.isInitialized) chatInput.hint =
             if (isCodeMode) "Опишите задачу для кода…" else "Напишите сообщение…"
+        codeModeHeader?.text = if (isCodeMode) "Код ✓" else "Код"
     }
 
     private fun validateSavedSession() {
