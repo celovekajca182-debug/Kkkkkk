@@ -158,6 +158,55 @@ def build_evidence_ledger(
     }
 
 
+def execute_local_plan(
+    message: str,
+    *,
+    language: str = "ru",
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run only registered in-process tools; report unavailable steps explicitly."""
+    payload = dict(context or {})
+    payload["message"] = str(message or "")
+    payload["language"] = language
+    steps = plan_task(message, language)
+    outcomes: list[dict[str, Any]] = []
+    for step in steps:
+        tool = _TOOL_REGISTRY.get(step.tool)
+        if tool is None:
+            outcomes.append({
+                "step": step.name,
+                "tool": step.tool,
+                "status": "planned" if step.tool in {
+                    "planner.parse", "project.design", "reasoning.local_synthesis",
+                    "evidence.report", "response.local_fallback",
+                } else "unavailable",
+            })
+            continue
+        try:
+            result = tool(payload)
+            outcomes.append({
+                "step": step.name,
+                "tool": step.tool,
+                "status": "completed",
+                "result": result,
+            })
+        except Exception as error:
+            outcomes.append({
+                "step": step.name,
+                "tool": step.tool,
+                "status": "failed",
+                "error": str(error)[:300],
+            })
+    return {
+        "engine": "swin-local-agent",
+        "steps": [
+            {"name": step.name, "purpose": step.purpose, "tool": step.tool}
+            for step in steps
+        ],
+        "tool_results": outcomes,
+    }
+
+
 def capability_report() -> dict[str, Any]:
     """Describe the local engine, model status and capability limits honestly."""
     return {
