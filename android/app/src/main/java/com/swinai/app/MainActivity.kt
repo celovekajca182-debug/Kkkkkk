@@ -12,6 +12,8 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.ColorDrawable
 import android.text.InputType
+import android.text.util.Linkify
+import android.text.method.LinkMovementMethod
 import android.text.method.PasswordTransformationMethod
 import android.text.method.HideReturnsTransformationMethod
 import android.view.Gravity
@@ -46,6 +48,8 @@ class MainActivity : Activity() {
     private lateinit var activitySwitch: Switch
     private lateinit var projectContextInput: EditText
     private lateinit var copyCodeButton: Button
+    private var welcomePanel: View? = null
+    private var codeModeHeader: TextView? = null
 
     private var lastGeneratedCode: String = ""
     private var isRegisterMode = false
@@ -517,20 +521,22 @@ class MainActivity : Activity() {
     private fun chatColor(key: String): Int {
         val dark = isDarkTheme()
         return when (key) {
-            "background" -> if (dark) Color.rgb(20, 24, 22) else Color.rgb(250, 248, 243)
-            "panel" -> if (dark) Color.rgb(31, 37, 33) else Color.rgb(255, 254, 251)
-            "ink" -> if (dark) Color.rgb(235, 239, 233) else Color.rgb(43, 42, 38)
-            "muted" -> if (dark) Color.rgb(157, 169, 159) else Color.rgb(126, 122, 113)
-            "accent" -> if (dark) Color.rgb(190, 224, 132) else Color.rgb(190, 111, 82)
-            "stroke" -> if (dark) Color.rgb(57, 68, 60) else Color.rgb(224, 219, 210)
-            "assistantBubble" -> if (dark) Color.rgb(31, 37, 33) else Color.rgb(255, 254, 251)
-            "userBubble" -> if (dark) Color.rgb(43, 55, 45) else Color.rgb(237, 230, 219)
-            "codeBubble" -> if (dark) Color.rgb(23, 29, 25) else Color.rgb(243, 241, 235)
-            "codePill" -> if (dark) Color.rgb(48, 39, 33) else Color.rgb(245, 237, 229)
-            "composerHint" -> if (dark) Color.rgb(161, 171, 163) else Color.rgb(154, 149, 139)
-            "sendText" -> if (dark) Color.rgb(28, 34, 28) else Color.WHITE
-            "assistantLabel" -> if (dark) Color.rgb(222, 165, 133) else Color.rgb(177, 105, 79)
-            "userLabel" -> if (dark) Color.rgb(191, 213, 156) else Color.rgb(139, 105, 84)
+            "background" -> if (dark) Color.rgb(16, 20, 18) else Color.rgb(247, 248, 245)
+            "panel" -> if (dark) Color.rgb(27, 33, 29) else Color.rgb(255, 255, 253)
+            "ink" -> if (dark) Color.rgb(238, 242, 237) else Color.rgb(33, 40, 35)
+            "muted" -> if (dark) Color.rgb(158, 171, 161) else Color.rgb(111, 121, 113)
+            "accent" -> if (dark) Color.rgb(190, 224, 132) else Color.rgb(75, 125, 85)
+            "stroke" -> if (dark) Color.rgb(54, 66, 57) else Color.rgb(222, 229, 219)
+            "assistantBubble" -> if (dark) Color.rgb(27, 33, 29) else Color.rgb(255, 255, 253)
+            "userBubble" -> if (dark) Color.rgb(40, 53, 43) else Color.rgb(234, 242, 231)
+            "codeBubble" -> if (dark) Color.rgb(20, 26, 22) else Color.rgb(240, 244, 239)
+            "codePill" -> if (dark) Color.rgb(39, 53, 42) else Color.rgb(232, 242, 229)
+            "composerHint" -> if (dark) Color.rgb(160, 172, 162) else Color.rgb(143, 151, 143)
+            "sendText" -> if (dark) Color.rgb(21, 29, 22) else Color.WHITE
+            "assistantLabel" -> if (dark) Color.rgb(194, 220, 160) else Color.rgb(83, 126, 88)
+            "userLabel" -> if (dark) Color.rgb(188, 217, 169) else Color.rgb(83, 126, 88)
+            "success" -> if (dark) Color.rgb(166, 215, 137) else Color.rgb(61, 129, 78)
+            "danger" -> if (dark) Color.rgb(235, 135, 126) else Color.rgb(190, 67, 61)
             else -> chatColor("ink")
         }
     }
@@ -714,19 +720,23 @@ class MainActivity : Activity() {
 
     private fun showChatSettings() {
         val options = arrayOf(
+            "Память SWIN",
             "Язык ответа",
+            "Оформление",
             "Адрес сервера",
-            "Очистить историю и память",
+            "Очистить историю чата",
             "Выйти из аккаунта"
         )
         AlertDialog.Builder(this)
-            .setTitle("Настройки SWIN AI")
+            .setTitle("Настройки")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> showResponseLanguageSettings()
-                    1 -> showEndpointSettings()
-                    2 -> confirmClearChatMemory()
-                    3 -> logout()
+                    0 -> showMemorySettings()
+                    1 -> showResponseLanguageSettings()
+                    2 -> showThemeSettings()
+                    3 -> showEndpointSettings()
+                    4 -> confirmClearChatMemory()
+                    5 -> logout()
                 }
             }
             .setNegativeButton("Закрыть", null)
@@ -900,8 +910,8 @@ class MainActivity : Activity() {
 
     private fun confirmClearChatMemory() {
         AlertDialog.Builder(this)
-            .setTitle("Очистить память?")
-            .setMessage("Будут удалены история этой сессии на сервере и резервная копия на телефоне.")
+            .setTitle("Очистить историю чата?")
+            .setMessage("Будут удалены сообщения этой переписки с сервера и резервная копия на телефоне. Сохранённые факты памяти SWIN останутся.")
             .setPositiveButton("Очистить") { _, _ -> clearChatMemory() }
             .setNegativeButton("Отмена", null)
             .show()
@@ -926,7 +936,7 @@ class MainActivity : Activity() {
             getPreferences(MODE_PRIVATE).edit().remove(localHistoryKey()).apply()
             runOnUiThread {
                 chatMessages.removeAllViews()
-                appendChatMessage("assistant", "История очищена. Начнём заново.")
+                appendChatMessage("assistant", "История чата очищена. Сохранённые факты памяти не затронуты.")
                 val message = if (serverCleared) "История очищена на сервере и телефоне."
                     else "Копия на телефоне очищена. Сервер временно недоступен."
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
