@@ -1105,8 +1105,22 @@ class MainActivity : Activity() {
                                 }
                                 manifestBytes = entryBytes
                             } else {
-                                val fileName = name.substringAfterLast('/').trim()
-                                if (fileName.isNotBlank() && !fileName.startsWith(".")) {
+                                val filePath = name.trim('/')
+                                val pathParts = filePath.split("/")
+                                val fileName = pathParts.lastOrNull().orEmpty()
+                                val hiddenDirectory = pathParts.dropLast(1).any { it.startsWith(".") }
+                                val allowedHiddenFile = fileName == ".gitignore" || fileName == ".env.example"
+                                val excludedDirectory = pathParts.any {
+                                    it.lowercase() in setOf(
+                                        ".git", ".idea", ".gradle", ".venv", ".godot",
+                                        "node_modules", "__pycache__", "build", "dist"
+                                    ) || it == "__MACOSX"
+                                }
+                                if (
+                                    filePath.isNotBlank() && filePath.length <= 180 &&
+                                    !hiddenDirectory && !excludedDirectory &&
+                                    (!fileName.startsWith(".") || allowedHiddenFile)
+                                ) {
                                     looseFileBytes += entryBytes.size
                                     if (looseFileBytes > 1_500_000 || entryBytes.size > 60_000) {
                                         throw IllegalArgumentException("Файлы архива превышают лимит рабочего пространства.")
@@ -1120,8 +1134,8 @@ class MainActivity : Activity() {
                                     }
                                     looseFiles.add(
                                         JSONObject()
-                                            .put("name", fileName)
-                                            .put("language", guessWorkspaceLanguage(fileName))
+                                            .put("name", filePath)
+                                            .put("language", guessWorkspaceLanguage(filePath))
                                             .put("content", decoded)
                                     )
                                 }
