@@ -55,7 +55,7 @@ def generate_text(
     model = (model_override or os.getenv("SWIN_REASONING_MODEL", "gpt-6.2-sol")).strip()
     if not model or len(model) > 120:
         raise LLMProviderError("Invalid reasoning model identifier.")
-    output_limit = max(64, min(int(max_output_tokens), 8192))
+    output_limit = max(64, min(int(max_output_tokens), 16384))
     effort = (reasoning_effort or os.getenv("SWIN_REASONING_EFFORT", "medium")).strip().lower()
     if effort not in {"low", "medium", "high", "xhigh", "max"}:
         raise LLMProviderError("Invalid reasoning effort setting.")
