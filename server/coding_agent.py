@@ -592,8 +592,9 @@ def _make_prompt(
 ) -> str:
     """Build a prompt using the checkpoint's actual tokenization units."""
     token_limit = max(64, block_size - 4)
-    # Unicode checkpoints consume one token per character; legacy checkpoints
-    # consume UTF-8 bytes. Counting bytes for both silently wasted Russian context.
+    character_tokens = getattr(tokenizer, "vocabulary", None) is not None
+
+    # Use the checkpoint's true token IDs. In particular, BPE is not byte counting.
     def token_length(value: str) -> int:
         encoder = getattr(tokenizer, "encode", None)
         if callable(encoder):
@@ -618,13 +619,32 @@ def _make_prompt(
             tail_budget = usable - head_budget
             if character_tokens:
                 task_text = task_text[:head_budget] + marker + task_text[-tail_budget:]
-            else:
+            elif tokenizer is None or not callable(getattr(tokenizer, "encode", None)):
                 task_data = task_text.encode("utf-8")
                 task_text = (
                     task_data[:head_budget].decode("utf-8", errors="ignore")
                     + marker
                     + task_data[-tail_budget:].decode("utf-8", errors="ignore")
                 )
+            else:
+                # BPE token counts are not proportional to bytes. Find the
+                # largest head/tail character window that really fits.
+                low, high = 1, len(task_text)
+                best = marker
+                while low <= high:
+                    keep = (low + high) // 2
+                    head_chars = max(1, int(keep * 0.15))
+                    tail_chars = max(0, keep - head_chars)
+                    candidate = (
+                        task_text[:head_chars] + marker
+                        + (task_text[-tail_chars:] if tail_chars else "")
+                    )
+                    if token_length(candidate) <= task_budget:
+                        best = candidate
+                        low = keep + 1
+                    else:
+                        high = keep - 1
+                task_text = best
 
     optional_lines: list[str] = []
     context = re.sub(r"\s+", " ", project_context).strip()
@@ -661,14 +681,14 @@ def run_code_assist(
 ) -> dict[str, Any]:
     """Research, generate, run independent static checks and report limits."""
     normalized_task = (task or "").strip()
-    if not normalized_task:
-        raise ValueError("Опиши задачу, для которой нужен код.")
-    if len(normalized_task) > 4000:
-        raise ValueError("Описание задачи слишком длинное (максимум 4000 символов).")
-
-    language = detect_language(normalized_task, language)
     response_language = resolve_response_language(normalized_task, response_language)
     copy = code_assist_copy(response_language)
+    if not normalized_task:
+        raise ValueError(copy["empty"])
+    if len(normalized_task) > 4000:
+        raise ValueError(copy["too_long"])
+
+    language = detect_language(normalized_task, language)
 
     def localize_result(result: dict[str, Any]) -> dict[str, Any]:
         status = result.get("status", "draft_needs_review")
