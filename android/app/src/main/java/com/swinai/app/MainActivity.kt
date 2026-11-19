@@ -173,7 +173,7 @@ class MainActivity : Activity() {
     private fun authLabel(value: String): TextView = makeText(
         value,
         13f,
-        Color.rgb(190, 199, 204)
+        chatColor("muted")
     ).apply {
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
@@ -181,6 +181,8 @@ class MainActivity : Activity() {
     private fun authInput(hintText: String, type: Int): EditText =
         makeEdit(hintText, type).apply {
             background = authFieldBackground()
+            setTextColor(chatColor("ink"))
+            setHintTextColor(chatColor("muted"))
             setPadding(authDp(16), authDp(8), authDp(16), authDp(8))
             minHeight = authDp(56)
             textSize = 16f
@@ -313,6 +315,8 @@ class MainActivity : Activity() {
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         ).apply {
             background = ColorDrawable(Color.TRANSPARENT)
+            setTextColor(inkColor)
+            setHintTextColor(mutedColor)
             setPadding(authDp(16), authDp(8), authDp(8), authDp(8))
             minHeight = authDp(54)
             textSize = 16f
@@ -401,7 +405,7 @@ class MainActivity : Activity() {
 
         addGap(content, 28)
         val serverDivider = View(this).apply {
-            setBackgroundColor(Color.rgb(43, 52, 58))
+            setBackgroundColor(chatColor("stroke"))
         }
         content.addView(serverDivider, LinearLayout.LayoutParams(-1, authDp(1)))
         addGap(content, 15)
@@ -446,7 +450,7 @@ class MainActivity : Activity() {
         content.addView(makeText(
             "SWIN AI  •  Защищённое подключение",
             11f,
-            Color.rgb(100, 113, 119)
+            mutedColor
         ).apply { gravity = Gravity.CENTER })
 
         scroll.addView(content)
