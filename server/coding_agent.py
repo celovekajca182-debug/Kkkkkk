@@ -864,7 +864,7 @@ def run_code_assist(
         return localize_result(result)
 
     activity.append({"stage": "planning", "status": "done", "label": "Требования и справочные источники подготовлены"})
-    block_size = int(getattr(transformer_model, "block_size", 12000 if text_generator else 256))
+    block_size = int(getattr(transformer_model, "block_size", 40000 if text_generator else 256))
     prompt = _make_prompt(
         normalized_task,
         language,
@@ -877,7 +877,7 @@ def run_code_assist(
     )
     try:
         if text_generator is not None:
-            raw = text_generator(prompt, 3500)
+            raw = text_generator(prompt, 8000)
         else:
             raw = transformer_model.generate(
                 prompt, max_new_tokens=900, temperature=0.12, top_k=12, stop_at_newline=False
@@ -925,7 +925,7 @@ def run_code_assist(
         repair_prompt = repair_bytes[-max(64, block_size - 4):].decode("utf-8", "ignore")
         try:
             if text_generator is not None:
-                repaired = text_generator(repair_prompt, 3500)
+                repaired = text_generator(repair_prompt, 8000)
             else:
                 repaired = transformer_model.generate(
                     repair_prompt, max_new_tokens=900, temperature=0.0, top_k=1, stop_at_newline=False
