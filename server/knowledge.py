@@ -50,6 +50,37 @@ class KnowledgeBase:
             and isinstance(item.get("title"), str)
             and isinstance(item.get("answer"), str)
         ]
+
+        # The reviewed dialogue set is also a retrieval source at inference time.
+        # It is deliberately kept separate from the model's training process:
+        # known answers remain available even when generation is weak or disabled.
+        dialogue_path = self.path.with_name("dialogue.jsonl")
+        if dialogue_path.is_file():
+            known_questions = {
+                str(item.get("question", "")).strip().casefold()
+                for item in self.entries
+            }
+            for line_number, line in enumerate(
+                dialogue_path.read_text(encoding="utf-8").splitlines(), 1
+            ):
+                if not line.strip():
+                    continue
+                try:
+                    pair = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                question = str(pair.get("question", "")).strip()
+                answer = str(pair.get("answer", "")).strip()
+                if not question or not answer or question.casefold() in known_questions:
+                    continue
+                self.entries.append({
+                    "title": "Проверенный диалог: " + question[:100],
+                    "question": question,
+                    "keywords": tokenize(question),
+                    "answer": answer,
+                })
+                known_questions.add(question.casefold())
+
         self.index = []
         self.document_frequency = Counter()
         for item in self.entries:
