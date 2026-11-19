@@ -769,6 +769,15 @@ class MainActivity : Activity() {
             addBody(value, monospace = true)
             if (!copyText.isNullOrBlank()) {
                 addCopyAction(copyText, "Копировать код", "Код скопирован")
+                val saveAction = TextView(this).apply {
+                    text = "＋  Сохранить в проект"
+                    textSize = 12f
+                    setTextColor(chatColor("accent"))
+                    gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                    setPadding(0, chatDp(5), chatDp(2), 0)
+                    setOnClickListener { showSaveGeneratedCode(copyText, "text") }
+                }
+                card.addView(saveAction, LinearLayout.LayoutParams(-1, chatDp(30)))
             }
         } else if (!user) {
             val codeFence = Regex("(?s)```([A-Za-z0-9_+#.-]*)\\s*\\n(.*?)```")
@@ -2936,7 +2945,7 @@ class MainActivity : Activity() {
         val selectedResponseLanguage = responseLanguage
         val requestSessionId = sessionId
         val userDisplayMessage = if (imagePayloads.isNotEmpty()) {
-            (message + "\\n").takeIf { message.isNotBlank() }.orEmpty() +
+            (message + "\n").takeIf { message.isNotBlank() }.orEmpty() +
                 "📷 ${imagePayloads.size} фото прикреплено"
         } else message
 
