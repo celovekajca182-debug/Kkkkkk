@@ -1450,6 +1450,13 @@ class MainActivity : Activity() {
                     "Файл: $currentName\nЯзык: $currentLanguage\n\n" + source
                 if (::projectContextInput.isInitialized) {
                     projectContextInput.setText(contextText.take(4000))
+                    if (contextText.length > 4000) {
+                        Toast.makeText(
+                            this,
+                            "Файл сохранён полностью; в контекст SWIN помещены первые 4000 символов.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                 }
                 isCodeMode = true
                 updateCodingControls()
