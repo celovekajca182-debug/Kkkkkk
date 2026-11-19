@@ -8,11 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       pretrain_epochs:
-        description: "Эпохи предобучения на русских текстах"
+        description: "Эпохи многоязычного предобучения"
         required: true
         default: "12"
       sft_epochs:
-        description: "Эпохи дообучения на вопросах и ответах"
+        description: "Эпохи многоязычного instruction tuning"
         required: true
         default: "6"
 permissions:
@@ -40,7 +40,7 @@ jobs:
           pip install -r server/requirements.txt
           pip install -r server/requirements-transformer.txt --extra-index-url https://download.pytorch.org/whl/cpu
           pip install datasets==3.3.2
-      - name: Prepare capped open Russian datasets
+      - name: Prepare capped multilingual open datasets
         working-directory: server
         run: |
           python prepare_corpus.py \
@@ -50,6 +50,9 @@ jobs:
             --wiki-max-chars 900000 \
             --classic-documents 400 \
             --classic-max-chars 250000 \
+            --multilingual-web-languages "deu_Latn,spa_Latn,fra_Latn,cmn_Hani,ita_Latn,por_Latn,jpn_Jpan" \
+            --multilingual-web-documents 300 \
+            --multilingual-web-max-chars 100000 \
             --max-doc-chars 2500 \
             --oasst-max-pairs 3500
           python prepare_coding_data.py --max-train 700 --max-validation 160
@@ -69,7 +72,7 @@ jobs:
             --vocab-size 2048 \
             --output models/swin-transformer.pt \
             --pretrain-output models/swin-transformer-pretrain.pt
-      - name: Evaluate generated Russian answers and Python code
+      - name: Evaluate all ten chat languages and Python code
         working-directory: server
         run: |
           python evaluate_transformer.py \
