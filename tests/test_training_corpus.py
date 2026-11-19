@@ -93,7 +93,7 @@ class TrainingCorpusTests(unittest.TestCase):
             (root / "dialogue.jsonl").write_text("", encoding="utf-8")
             (root / "oasst.jsonl").write_text("", encoding="utf-8")
             (root / "mbpp.jsonl").write_text(
-                '{"question":"Задача Python: сложить два числа","answer":"def add(a, b):\n    return a + b"}\n',
+                '{"question":"Задача Python: сложить два числа","answer":"def add(a, b):\\n    return a + b"}\n',
                 encoding="utf-8",
             )
             (root / "project.jsonl").write_text(
