@@ -850,6 +850,211 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showMemorySettings() {
+        val token = authToken
+        if (token.isNullOrBlank()) {
+            Toast.makeText(this, "Сначала войди в аккаунт.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        thread {
+            try {
+                val response = requestJson("/memory/facts", JSONObject(), token, method = "GET")
+                val items = response.optJSONArray("items") ?: JSONArray()
+                runOnUiThread { renderMemorySettings(items) }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    AlertDialog.Builder(this)
+                        .setTitle("Память SWIN")
+                        .setMessage("Не удалось загрузить сохранённые факты.\n" + (error.message ?: "Проверь соединение с сервером."))
+                        .setPositiveButton("Повторить") { _, _ -> showMemorySettings() }
+                        .setNegativeButton("Закрыть", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun renderMemorySettings(items: JSONArray) {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(18), chatDp(10), chatDp(18), chatDp(8))
+        }
+        root.addView(makeText(
+            "Факты сохраняются в твоём аккаунте и помогают SWIN учитывать предпочтения и контекст проектов.",
+            13f,
+            chatColor("muted")
+        ))
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        if (items.length() == 0) {
+            val empty = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(chatDp(16), chatDp(22), chatDp(16), chatDp(22))
+                background = chatBg(chatColor("panel"), 15, chatColor("stroke"))
+            }
+            empty.addView(makeText("Пока ничего не сохранено", 15f, chatColor("ink")).apply {
+                gravity = Gravity.CENTER
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            })
+            empty.addView(makeText("Например: «Запомни, что мой проект использует Godot 4».", 12f, chatColor("muted")).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, chatDp(6), 0, 0)
+            })
+            list.addView(empty)
+        } else {
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                val key = item.optString("memory_key", "")
+                val value = item.optString("value", "")
+                val category = when (item.optString("category", "note")) {
+                    "preference" -> "ПРЕДПОЧТЕНИЕ"
+                    "project" -> "ПРОЕКТ"
+                    else -> "ЗАМЕТКА"
+                }
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(chatDp(13), chatDp(10), chatDp(13), chatDp(8))
+                    background = chatBg(chatColor("panel"), 14, chatColor("stroke"))
+                }
+                val top = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                top.addView(makeText(category, 10f, chatColor("accent")).apply {
+                    letterSpacing = 0.08f
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                }, LinearLayout.LayoutParams(0, chatDp(24), 1f))
+                val remove = TextView(this).apply {
+                    text = "Удалить"
+                    textSize = 12f
+                    setTextColor(chatColor("danger"))
+                    gravity = Gravity.CENTER
+                    setPadding(chatDp(8), 0, 0, 0)
+                    setOnClickListener { deleteMemoryFact(key) }
+                }
+                top.addView(remove, LinearLayout.LayoutParams(-2, chatDp(30)))
+                card.addView(top)
+                card.addView(makeText(value, 14f, chatColor("ink")).apply {
+                    setTextIsSelectable(true)
+                    setPadding(0, chatDp(3), 0, chatDp(2))
+                })
+                list.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
+                    bottomMargin = chatDp(8)
+                })
+            }
+        }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = false
+            addView(list, ViewGroup.LayoutParams(-1, -2))
+        }
+        root.addView(scroll, LinearLayout.LayoutParams(-1, chatDp(300)).apply {
+            topMargin = chatDp(12)
+        })
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Долговременная память")
+            .setView(root)
+            .setPositiveButton("Готово", null)
+            .setNeutralButton("＋ Добавить факт", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(chatColor("accent"))
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(chatColor("accent"))
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener {
+                dialog.dismiss()
+                showAddMemoryDialog()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showAddMemoryDialog() {
+        val input = EditText(this).apply {
+            hint = "Например: мой основной проект — SWIN AI"
+            setTextColor(chatColor("ink"))
+            setHintTextColor(chatColor("muted"))
+            setSingleLine(false)
+            minLines = 2
+            maxLines = 4
+            textSize = 15f
+            setPadding(chatDp(14), chatDp(12), chatDp(14), chatDp(12))
+            background = chatBg(chatColor("panel"), 12, chatColor("stroke"))
+        }
+        val wrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(20), chatDp(8), chatDp(20), 0)
+            addView(input, LinearLayout.LayoutParams(-1, -2))
+            addView(makeText(
+                "Не сохраняй пароли, ключи доступа и платёжные данные.",
+                11f,
+                chatColor("muted")
+            ).apply { setPadding(0, chatDp(8), 0, 0) })
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Новый факт памяти")
+            .setView(wrapper)
+            .setPositiveButton("Сохранить", null)
+            .setNegativeButton("Отмена", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(chatColor("accent"))
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(chatColor("muted"))
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val value = input.text.toString().trim()
+                if (value.isBlank()) {
+                    input.error = "Введи текст для сохранения"
+                    return@setOnClickListener
+                }
+                dialog.dismiss()
+                saveMemoryFact(value)
+            }
+        }
+        dialog.show()
+    }
+
+    private fun saveMemoryFact(value: String) {
+        val token = authToken ?: return
+        thread {
+            try {
+                requestJson("/memory/facts", JSONObject().put("value", value), token)
+                runOnUiThread {
+                    Toast.makeText(this, "Факт сохранён в памяти SWIN", Toast.LENGTH_SHORT).show()
+                    showMemorySettings()
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    AlertDialog.Builder(this)
+                        .setTitle("Не удалось сохранить")
+                        .setMessage(error.message ?: "Проверь подключение к серверу.")
+                        .setPositiveButton("Повторить") { _, _ -> saveMemoryFact(value) }
+                        .setNegativeButton("Закрыть", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun deleteMemoryFact(memoryKey: String) {
+        val token = authToken ?: return
+        if (memoryKey.isBlank()) return
+        thread {
+            try {
+                val encoded = URLEncoder.encode(memoryKey, "UTF-8")
+                requestJson("/memory/facts?memory_key=" + encoded, JSONObject(), token, method = "DELETE")
+                runOnUiThread {
+                    Toast.makeText(this, "Факт удалён", Toast.LENGTH_SHORT).show()
+                    showMemorySettings()
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, error.message ?: "Не удалось удалить факт", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     private fun showResponseLanguageSettings() {
         val codes = arrayOf("auto", "ru", "en", "de", "es", "fr", "zh", "uk", "pt", "it", "ja")
         val labels = arrayOf(
