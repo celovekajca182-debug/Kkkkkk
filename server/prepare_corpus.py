@@ -178,6 +178,79 @@ def load_fineweb_documents(max_documents: int, max_chars: int, max_doc_chars: in
     return train_docs, validation_docs, total_chars
 
 
+def load_finewiki_documents(
+    max_documents: int,
+    max_chars: int,
+    max_doc_chars: int,
+    min_doc_chars: int,
+    validation_fraction: float,
+    seed: int,
+):
+    """Stream a reproducible Russian Wikipedia sample from FineWiki."""
+    try:
+        from datasets import load_dataset
+    except ImportError as error:
+        raise RuntimeError("Для загрузки FineWiki установи пакет datasets.") from error
+
+    stream = load_dataset(
+        "HuggingFaceFW/finewiki",
+        "ru",
+        split="train",
+        streaming=True,
+    ).shuffle(seed=seed, buffer_size=500)
+
+    train_docs: list[str] = []
+    validation_docs: list[str] = []
+    seen_titles: set[str] = set()
+    seen_texts: set[str] = set()
+    total_chars = 0
+    rng = random.Random(seed)
+
+    for row in stream:
+        title = clean_text(row.get("title", ""))
+        body = clean_text(row.get("text", ""))
+        if not title or len(body) < min_doc_chars:
+            continue
+        if russian_letter_ratio(title + " " + body) < 0.35:
+            continue
+
+        # FineWiki already removes most citation sections. Drop any remaining
+        # trailing reference-only headings without destroying article structure.
+        body = re.split(
+            r"(?im)^\s{0,3}(?:#{1,6}\s*)?(?:Примечания|Литература|Ссылки|Источники|См\. также)\s*$",
+            body,
+            maxsplit=1,
+        )[0].strip()
+        if len(body) < min_doc_chars:
+            continue
+
+        title_key = title.casefold()
+        if title_key in seen_titles:
+            continue
+        if len(body) > max_doc_chars:
+            body = body[:max_doc_chars].rsplit(" ", 1)[0].strip()
+        document = title + "\n" + body
+        fingerprint = str(hash(document))
+        if fingerprint in seen_texts:
+            continue
+        if total_chars + len(document) > max_chars:
+            break
+
+        seen_titles.add(title_key)
+        seen_texts.add(fingerprint)
+        total_chars += len(document)
+        target = validation_docs if rng.random() < validation_fraction else train_docs
+        target.append(document)
+        if len(train_docs) + len(validation_docs) >= max_documents:
+            break
+
+    if not train_docs or not validation_docs:
+        raise RuntimeError(
+            "FineWiki не дал достаточного числа русских статей для train и validation."
+        )
+    return train_docs, validation_docs, total_chars
+
+
 def write_text(path: Path, documents: list[str]):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n\n<|document|>\n\n".join(documents) + "\n", encoding="utf-8")
@@ -195,6 +268,8 @@ def main():
     parser.add_argument("--output-dir", default="data")
     parser.add_argument("--web-documents", type=int, default=1500)
     parser.add_argument("--web-max-chars", type=int, default=800000)
+    parser.add_argument("--wiki-documents", type=int, default=1200)
+    parser.add_argument("--wiki-max-chars", type=int, default=600000)
     parser.add_argument("--max-doc-chars", type=int, default=3000)
     parser.add_argument("--min-doc-chars", type=int, default=250)
     parser.add_argument("--oasst-max-pairs", type=int, default=1800)
@@ -204,6 +279,8 @@ def main():
 
     if args.web_documents < 10 or args.web_max_chars < 10000:
         parser.error("Лимит веб-корпуса слишком мал.")
+    if args.wiki_documents < 10 or args.wiki_max_chars < 10000:
+        parser.error("Лимит Wikipedia-корпуса слишком мал.")
     if not 0.05 <= args.validation_fraction <= 0.2:
         parser.error("--validation-fraction должен быть от 0.05 до 0.2.")
 
@@ -215,6 +292,14 @@ def main():
         args.min_doc_chars,
         args.validation_fraction,
         args.seed,
+    )
+    wiki_train, wiki_valid, wiki_chars = load_finewiki_documents(
+        args.wiki_documents,
+        args.wiki_max_chars,
+        args.max_doc_chars,
+        args.min_doc_chars,
+        args.validation_fraction,
+        args.seed + 1,
     )
 
     try:
@@ -230,6 +315,8 @@ def main():
 
     write_text(output / "fineweb2_ru_train.txt", web_train)
     write_text(output / "fineweb2_ru_validation.txt", web_valid)
+    write_text(output / "finewiki_ru_train.txt", wiki_train)
+    write_text(output / "finewiki_ru_validation.txt", wiki_valid)
     write_jsonl(output / "openassistant_ru_train.jsonl", sft_train)
     write_jsonl(output / "openassistant_ru_validation.jsonl", sft_valid)
 
@@ -242,6 +329,24 @@ def main():
             "train_documents": len(web_train),
             "validation_documents": len(web_valid),
             "total_characters_capped": web_chars,
+        },
+        "finewiki": {
+            "dataset": "HuggingFaceFW/finewiki",
+            "config": "ru",
+            "source": "https://huggingface.co/datasets/HuggingFaceFW/finewiki",
+            "upstream": "https://ru.wikipedia.org/",
+            "license": "CC-BY-SA-4.0 (processed adaptation; GFDL also applies to relevant source contributions)",
+            "attribution": "Wikipedia contributors; FineWiki dataset by HuggingFaceFW/FineData",
+            "train_documents": len(wiki_train),
+            "validation_documents": len(wiki_valid),
+            "total_characters_capped": wiki_chars,
+            "filters": [
+                "Russian Cyrillic share >= 35%",
+                "minimum article length",
+                "deduplicate article titles and content",
+                "remove trailing reference-only sections when present",
+                "streaming sample with deterministic seed",
+            ],
         },
         "openassistant": {
             "dataset": "OpenAssistant/oasst1",
@@ -258,8 +363,10 @@ def main():
             ],
         },
         "notice": (
-            "Streaming sample with strict caps, not the full FineWeb2-HQ corpus. "
-            "Regex masking cannot guarantee removal of every personal identifier."
+            "Streaming samples with strict caps, not the full source datasets. "
+            "Regex masking cannot guarantee removal of every personal identifier. "
+            "Wikipedia/FineWiki text is CC BY-SA 4.0 and requires attribution; "
+            "this prepared adaptation must retain the source license and notices."
         ),
     }
     (output / "dataset_manifest.json").write_text(
