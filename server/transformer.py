@@ -196,7 +196,8 @@ class SWINTransformer(nn.Module):
         n_heads: int = 4,
         n_layers: int = 2,
         dropout: float = 0.1,
-    ):
+        vocab_size: int = BYTE_VOCAB_SIZE,
+    ): 
         super().__init__()
         if d_model % n_heads != 0:
             raise ValueError("d_model должен делиться на n_heads.")
@@ -207,8 +208,12 @@ class SWINTransformer(nn.Module):
         self.d_model = int(d_model)
         self.n_heads = int(n_heads)
         self.n_layers = int(n_layers)
+        self.vocab_size = int(vocab_size)
+        if self.vocab_size < 2:
+            raise ValueError("vocab_size должен быть не меньше 2.")
+        self.tokenizer = ByteTokenizer()
 
-        self.token_embedding = nn.Embedding(BYTE_VOCAB_SIZE, self.d_model)
+        self.token_embedding = nn.Embedding(self.vocab_size, self.d_model)
         self.position_embedding = nn.Embedding(self.block_size, self.d_model)
         self.register_buffer(
             "position_ids", torch.arange(self.block_size, dtype=torch.long), persistent=False
@@ -217,7 +222,7 @@ class SWINTransformer(nn.Module):
             self.d_model, self.n_heads, self.n_layers, dropout
         )
         self.final_norm = nn.LayerNorm(self.d_model)
-        self.lm_head = nn.Linear(self.d_model, BYTE_VOCAB_SIZE, bias=False)
+        self.lm_head = nn.Linear(self.d_model, self.vocab_size, bias=False)
         self.lm_head.weight = self.token_embedding.weight
 
     def _logits(self, x: torch.Tensor) -> torch.Tensor:
@@ -236,7 +241,7 @@ class SWINTransformer(nn.Module):
         loss = None
         if targets is not None:
             loss = F.cross_entropy(
-                logits.reshape(batch_size * sequence_length, BYTE_VOCAB_SIZE),
+                logits.reshape(batch_size * sequence_length, self.vocab_size),
                 targets.reshape(batch_size * sequence_length),
             )
         return logits, loss
@@ -274,10 +279,10 @@ class SWINTransformer(nn.Module):
         stop_at_newline: bool = True,
     ) -> str:
         self.eval()
-        tokenizer = ByteTokenizer()
+        tokenizer = self.tokenizer
         token_ids = tokenizer.encode(prompt)
         if not token_ids:
-            token_ids = [ord(" ")]
+            token_ids = tokenizer.encode(" ") or [0]
 
         context = token_ids[-self.block_size:]
         context_tensor = torch.tensor(
@@ -292,7 +297,7 @@ class SWINTransformer(nn.Module):
                 next_id = int(torch.argmax(next_logits).item())
             else:
                 next_logits = next_logits / max(float(temperature), 0.05)
-                if 1 <= top_k < BYTE_VOCAB_SIZE:
+                if 1 <= top_k < self.vocab_size:
                     threshold = torch.topk(next_logits, top_k).values[-1]
                     next_logits[next_logits < threshold] = float("-inf")
                 probabilities = F.softmax(next_logits, dim=-1)
