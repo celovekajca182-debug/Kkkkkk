@@ -86,7 +86,7 @@ SWIN остаётся небольшой экспериментальной мо
 
 Для серьёзного математического и программного поведения используй отдельный QLoRA-контур, а не маленький экспериментальный Transformer, обучаемый с нуля:
 
-- Базовая модель: [Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), лицензия Apache-2.0.
+- Базовая модель: [Qwen3-4B-Thinking-2507](https://huggingface.co/Qwen/Qwen3-4B-Thinking-2507), лицензия Apache-2.0.
 - Метод: 4-bit QLoRA / PEFT; базовые веса остаются замороженными, обучается компактный адаптер SWIN.
 - Математика: [NuminaMath-CoT](https://huggingface.co/datasets/project-numina/NuminaMath-CoT) и семь областей [Hendrycks MATH](https://huggingface.co/datasets/EleutherAI/hendrycks_math).
 - Программирование: [NVIDIA OpenCodeReasoning](https://huggingface.co/datasets/nvidia/OpenCodeReasoning) (CC BY 4.0; reasoning + Python solutions), MBPP sanitized и проверенные локальные примеры SWIN.
