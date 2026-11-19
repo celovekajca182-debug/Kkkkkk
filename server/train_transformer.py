@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from transformer import CharTokenizer, SWINTransformer, load_transformer, save_transformer
+from transformer import BPEByteTokenizer, CharTokenizer, SWINTransformer, load_transformer, save_transformer
 
 
 def read_instruction_pairs(path: Path) -> list[tuple[str, str]]:
@@ -142,7 +142,13 @@ def build_sft_windows(
         raise ValueError("Для SFT block_size должен быть не меньше 32.")
     prompt_budget = prompt_budget or max(64, block_size // 2)
     prompt_budget = min(prompt_budget, block_size - 8)
-    pad_id = tokenizer.stoi.get(" ", 0)
+    pad_id = getattr(tokenizer, "pad_token_id", None)
+    if pad_id is None:
+        pad_id = tokenizer.stoi.get(" ", 0)
+    eos_token_id = getattr(tokenizer, "eos_token_id", None)
+    answer_suffix = tokenizer.encode("\n\n")
+    if eos_token_id is not None:
+        answer_suffix.append(eos_token_id)
     windows: list[tuple[torch.Tensor, torch.Tensor]] = []
     stride = max(16, block_size // 2)
 
@@ -162,7 +168,7 @@ def build_sft_windows(
         answer_ids = tokenizer.encode(answer)
         if not answer_ids:
             continue
-        sequence = prompt_ids + answer_ids + tokenizer.encode("\n\n")
+        sequence = prompt_ids + answer_ids + answer_suffix
         prompt_end = len(prompt_ids)
         answer_end = prompt_end + len(answer_ids)
 
@@ -218,7 +224,7 @@ def build_tensor_splits(
     train_corpus: str,
     validation_corpus: str,
     block_size: int,
-    tokenizer: CharTokenizer | None = None,
+    tokenizer=None,
 ):
     if tokenizer is None:
         tokenizer = CharTokenizer.from_texts([train_corpus, validation_corpus])
@@ -387,6 +393,7 @@ def main():
     parser.add_argument("--d-model", type=int, default=96)
     parser.add_argument("--heads", type=int, default=4)
     parser.add_argument("--layers", type=int, default=2)
+    parser.add_argument("--vocab-size", type=int, default=2048)
     parser.add_argument("--seed", type=int, default=17)
     args = parser.parse_args()
 
@@ -396,6 +403,8 @@ def main():
         parser.error("--batch-size должен быть от 4 до 128")
     if args.d_model % args.heads != 0 or args.block_size < 32:
         parser.error("Проверь --d-model, --heads и --block-size.")
+    if not 512 <= args.vocab_size <= 32768:
+        parser.error("--vocab-size должен быть от 512 до 32768.")
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -438,11 +447,11 @@ def main():
         Path(args.project_examples),
     )
     # Never build the vocabulary from held-out validation examples.
-    tokenizer = CharTokenizer.from_texts(
+    tokenizer = BPEByteTokenizer.from_texts(
         [pretrain_train, sft_train],
-        max_vocab=4096,
+        vocab_size=args.vocab_size,
     )
-    print(f"Unicode character vocabulary: {tokenizer.vocab_size:,} tokens")
+    print(f"Byte-level BPE vocabulary: {tokenizer.vocab_size:,} tokens")
 
     # Этап 1: языковое предобучение на очищенных русских веб-документах.
     pretrain_train_data, pretrain_val_data = build_tensor_splits(
