@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import sqlite3
 import time
+from pathlib import Path
 from typing import Any
 
 from auth import TOKEN_TTL_SECONDS, digest_token, hash_password, normalize_email, validate_email, verify_password
@@ -275,3 +277,143 @@ class PostgresChatHistoryStore:
                 (int(user_id), session_id),
             )
             return int(cursor.rowcount)
+
+
+def migrate_sqlite_to_postgres(sqlite_path: str | Path, database_url: str) -> dict[str, int]:
+    """Copy existing SQLite identities, sessions, and chat history once.
+
+    A marker is written in the same PostgreSQL transaction as the copy, so
+    retries after a process restart do not duplicate conversation messages.
+    User IDs are mapped by normalized email to preserve account ownership.
+    """
+    source_path = Path(sqlite_path)
+    if not source_path.is_file():
+        return {"users": 0, "tokens": 0, "messages": 0}
+
+    source = sqlite3.connect(str(source_path), timeout=15)
+    source.row_factory = sqlite3.Row
+    try:
+        old_users = source.execute(
+            "SELECT id, email, password_hash, created_at FROM users ORDER BY id"
+        ).fetchall()
+        old_tokens = source.execute(
+            "SELECT token_hash, user_id, expires_at, created_at FROM auth_tokens"
+        ).fetchall()
+        try:
+            old_messages = source.execute(
+                """
+                SELECT id, user_id, session_id, role, content, created_at
+                FROM chat_messages ORDER BY id
+                """
+            ).fetchall()
+        except sqlite3.OperationalError:
+            old_messages = []
+    finally:
+        source.close()
+
+    copied_users = copied_tokens = copied_messages = 0
+    with _connect(database_url) as db:
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS swin_migration_log (
+                migration_key TEXT PRIMARY KEY,
+                applied_at BIGINT NOT NULL
+            )
+            """
+        )
+        already_done = db.execute(
+            "SELECT 1 FROM swin_migration_log WHERE migration_key = %s",
+            ("sqlite-legacy-v1",),
+        ).fetchone()
+        if already_done is not None:
+            return {"users": 0, "tokens": 0, "messages": 0}
+
+        user_id_map: dict[int, int] = {}
+        for row in old_users:
+            email = str(row["email"]).strip().lower()
+            db.execute(
+                """
+                INSERT INTO users(id, email, password_hash, created_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (email) DO NOTHING
+                """,
+                (int(row["id"]), email, row["password_hash"], int(row["created_at"])),
+            )
+            current = db.execute(
+                "SELECT id FROM users WHERE lower(email) = %s",
+                (email,),
+            ).fetchone()
+            if current is None:
+                raise RuntimeError("Не удалось сопоставить старый аккаунт PostgreSQL.")
+            user_id_map[int(row["id"])] = int(current["id"])
+            copied_users += 1
+
+        for row in old_tokens:
+            mapped_user_id = user_id_map.get(int(row["user_id"]))
+            if mapped_user_id is None:
+                continue
+            cursor = db.execute(
+                """
+                INSERT INTO auth_tokens(token_hash, user_id, expires_at, created_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (token_hash) DO NOTHING
+                """,
+                (
+                    row["token_hash"],
+                    mapped_user_id,
+                    int(row["expires_at"]),
+                    int(row["created_at"]),
+                ),
+            )
+            copied_tokens += max(0, cursor.rowcount)
+
+        for row in old_messages:
+            mapped_user_id = user_id_map.get(int(row["user_id"]))
+            if mapped_user_id is None:
+                continue
+            db.execute(
+                """
+                INSERT INTO chat_messages(id, user_id, session_id, role, content, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (
+                    int(row["id"]),
+                    mapped_user_id,
+                    row["session_id"],
+                    row["role"],
+                    row["content"],
+                    int(row["created_at"]),
+                ),
+            )
+            copied_messages += 1
+
+        # Explicitly inserted identity values must advance the sequences.
+        db.execute(
+            """
+            SELECT setval(
+                pg_get_serial_sequence('users', 'id'),
+                COALESCE(MAX(id), 1),
+                MAX(id) IS NOT NULL
+            ) FROM users
+            """
+        )
+        db.execute(
+            """
+            SELECT setval(
+                pg_get_serial_sequence('chat_messages', 'id'),
+                COALESCE(MAX(id), 1),
+                MAX(id) IS NOT NULL
+            ) FROM chat_messages
+            """
+        )
+        db.execute(
+            "INSERT INTO swin_migration_log(migration_key, applied_at) VALUES (%s, %s)",
+            ("sqlite-legacy-v1", int(time.time())),
+        )
+
+    return {
+        "users": copied_users,
+        "tokens": copied_tokens,
+        "messages": copied_messages,
+    }
