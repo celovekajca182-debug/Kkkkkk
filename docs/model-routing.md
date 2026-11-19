@@ -5,7 +5,7 @@ SWIN uses two independent model roles:
 | Role | Default model | Responsibility |
 | --- | --- | --- |
 | General chat | `Qwen/Qwen3-4B-Instruct-2507` | Conversation, explanations, math and general reasoning |
-| Coding | `Qwen/Qwen2.5-Coder-3B-Instruct` | Code generation, debugging, refactoring and repair |
+| Coding | `Qwen/Qwen2.5-Coder-7B-Instruct` | Code generation, debugging, refactoring and repair |
 
 The model IDs are configurable; no model weights are bundled into the Android APK or the lightweight FastAPI service.
 
@@ -35,7 +35,7 @@ Set these as server-side secrets/environment variables. Never put the provider k
 | `SWIN_LLM_BASE_URL` | empty | OpenAI-compatible API root, `/v1` URL, or full `/chat/completions` URL |
 | `SWIN_LLM_API_KEY` | empty | Optional bearer key for the inference provider |
 | `SWIN_CHAT_MODEL` | `Qwen/Qwen3-4B-Instruct-2507` | Model ID used by `/chat` |
-| `SWIN_CODE_MODEL` | `Qwen/Qwen2.5-Coder-3B-Instruct` | Model ID used by `/code/assist` |
+| `SWIN_CODE_MODEL` | `Qwen/Qwen2.5-Coder-7B-Instruct` | Model ID used by `/code/assist` |
 | `SWIN_LLM_TIMEOUT_SECONDS` | `90` | Inference request timeout, clamped to 5–240 seconds |
 
 When `SWIN_LLM_BASE_URL` is empty, SWIN preserves the legacy local-checkpoint path. When it is set, Qwen is preferred; if the provider is unavailable, the existing local model/retrieval fallback remains in place.
