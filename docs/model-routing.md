@@ -37,6 +37,10 @@ Set these as server-side secrets/environment variables. Never put the provider k
 | `SWIN_CHAT_MODEL` | `Qwen/Qwen3-4B-Instruct-2507` | Model ID used by `/chat` |
 | `SWIN_CODE_MODEL` | `Qwen/Qwen2.5-Coder-7B-Instruct` | Model ID used by `/code/assist` |
 | `SWIN_LLM_TIMEOUT_SECONDS` | `90` | Inference request timeout, clamped to 5–240 seconds |
+| `SWIN_CHAT_MAX_TOKENS` | `1200` | Maximum answer tokens for Qwen3 |
+| `SWIN_CODE_MAX_TOKENS` | `2400` | Maximum generated code tokens |
+| `SWIN_CHAT_TEMPERATURE` | `0.25` | Sampling temperature for chat |
+| `SWIN_CODE_TEMPERATURE` | `0.15` | Sampling temperature for code |
 
 When `SWIN_LLM_BASE_URL` is empty, SWIN preserves the legacy local-checkpoint path. When it is set, Qwen is preferred; if the provider is unavailable, the existing local model/retrieval fallback remains in place.
 
