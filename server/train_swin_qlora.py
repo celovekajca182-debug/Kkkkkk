@@ -7,6 +7,7 @@ This script fine-tunes a pretrained Qwen3 checkpoint and saves a PEFT adapter.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import random
@@ -155,6 +156,10 @@ def load_opencode_reasoning(max_train: int, max_validation: int, seed: int) -> t
             continue
         if len(solution) > 12000 or len(reasoning) > 14000:
             continue
+        try:
+            ast.parse(solution)
+        except SyntaxError:
+            continue
 
         # Keep the model explanation plus a clearly separated final code section.
         answer = reasoning
@@ -175,7 +180,10 @@ def load_opencode_reasoning(max_train: int, max_validation: int, seed: int) -> t
             continue
         seen.add(key)
 
-        if source_split in {"valid", "validation"}:
+        use_validation = source_split in {"valid", "validation"} or (
+            source_split == "train" and stable_bucket(dataset_id, item["question"]) < 5
+        )
+        if use_validation:
             if len(validation_rows) < max_validation:
                 validation_rows.append(item)
         else:
