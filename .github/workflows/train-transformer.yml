@@ -6,11 +6,11 @@ on:
       pretrain_epochs:
         description: "Эпохи предобучения на русских текстах"
         required: true
-        default: "10"
+        default: "12"
       sft_epochs:
         description: "Эпохи дообучения на вопросах и ответах"
         required: true
-        default: "4"
+        default: "6"
   push:
     branches: ["main"]
     paths:
@@ -54,11 +54,11 @@ jobs:
         working-directory: server
         run: |
           python prepare_corpus.py \
-            --web-documents 1200 \
-            --web-max-chars 600000 \
+            --web-documents 2500 \
+            --web-max-chars 1500000 \
             --max-doc-chars 2500 \
-            --oasst-max-pairs 1500
-          python prepare_coding_data.py --max-train 350 --max-validation 80
+            --oasst-max-pairs 3500
+          python prepare_coding_data.py --max-train 700 --max-validation 160
       - name: Run all tests
         run: python -m unittest discover -s tests -v
       - name: Two-stage SWIN training
@@ -68,6 +68,10 @@ jobs:
             --pretrain-epochs ${{ inputs.pretrain_epochs || '10' }} \
             --sft-epochs ${{ inputs.sft_epochs || '4' }} \
             --block-size 512 \
+            --batch-size 12 \
+            --d-model 128 \
+            --heads 4 \
+            --layers 4 \
             --output models/swin-transformer.pt \
             --pretrain-output models/swin-transformer-pretrain.pt
       - uses: actions/upload-artifact@v4
