@@ -174,8 +174,10 @@ Workflow **Build SWIN AI APK** собирает debug APK; актуальная 
 Для включения более сильной модели владелец сервера задаёт в Render Environment:
 
 - `SWIN_LLM_API_KEY` — ключ OpenAI API для текстового чата и генерации кода;
-- `SWIN_REASONING_MODEL` — по умолчанию `gpt-6.2-sol`;
+- `SWIN_REASONING_MODEL` — по умолчанию `gpt-6.2-sol` для чата;
 - `SWIN_REASONING_EFFORT` — по умолчанию `medium`;
+- `SWIN_CODING_MODEL` — по умолчанию `gpt-6.2-astra` для сложных задач программирования;
+- `SWIN_CODING_EFFORT` — по умолчанию `high`;
 - `SWIN_VISION_API_KEY` — ключ для анализа фотографий; можно использовать тот же API-ключ, что и для текстового режима;
 - `SWIN_VISION_MODEL` — по умолчанию `gpt-6.1-terra`.
 
