@@ -46,6 +46,25 @@ class ChatHistoryStore:
                 ON chat_messages(user_id, session_id, id)
                 """
             )
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_memories (
+                    user_id INTEGER NOT NULL,
+                    memory_key TEXT NOT NULL,
+                    category TEXT NOT NULL DEFAULT 'note',
+                    value TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY(user_id, memory_key)
+                )
+                """
+            )
+            db.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_user_memories_updated
+                ON user_memories(user_id, updated_at DESC)
+                """
+            )
 
     def save_turn(
         self, user_id: int, session_id: str, user_message: str, assistant_message: str
@@ -149,6 +168,67 @@ class ChatHistoryStore:
                 ],
             )
         return True
+
+    def save_memory(
+        self, user_id: int, memory_key: str, value: str, category: str = "note"
+    ) -> dict[str, Any]:
+        """Insert or update an explicit, account-scoped memory fact."""
+        now = int(time.time())
+        with self._connect() as db:
+            db.execute(
+                """
+                INSERT INTO user_memories(user_id, memory_key, category, value, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, memory_key) DO UPDATE SET
+                    category = excluded.category,
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (int(user_id), memory_key, category, value[:500], now, now),
+            )
+        return {
+            "memory_key": memory_key,
+            "category": category,
+            "value": value[:500],
+            "updated_at": now,
+        }
+
+    def memories(self, user_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(int(limit), 50))
+        with self._connect() as db:
+            rows = db.execute(
+                """
+                SELECT memory_key, category, value, updated_at
+                FROM user_memories
+                WHERE user_id = ?
+                ORDER BY updated_at DESC, memory_key
+                LIMIT ?
+                """,
+                (int(user_id), safe_limit),
+            ).fetchall()
+        return [
+            {
+                "memory_key": row["memory_key"],
+                "category": row["category"],
+                "value": row["value"],
+                "updated_at": int(row["updated_at"]),
+            }
+            for row in rows
+        ]
+
+    def delete_memory(self, user_id: int, memory_key: str | None = None) -> int:
+        with self._connect() as db:
+            if memory_key is None:
+                cursor = db.execute(
+                    "DELETE FROM user_memories WHERE user_id = ?",
+                    (int(user_id),),
+                )
+            else:
+                cursor = db.execute(
+                    "DELETE FROM user_memories WHERE user_id = ? AND memory_key = ?",
+                    (int(user_id), memory_key),
+                )
+            return int(cursor.rowcount)
 
     def clear(self, user_id: int, session_id: str) -> int:
         with self._connect() as db:
