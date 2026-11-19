@@ -60,8 +60,8 @@ class TrainingCorpusTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "multilingual.jsonl"
             path.write_text(
-                '{"question":"How do functions work?","answer":"A function returns a value.","language":"en"}\\n'
-                '{"question":"関数とは何ですか？","answer":"関数は値を返します。","language":"ja"}\\n',
+                '{"question":"How do functions work?","answer":"A function returns a value.","language":"en"}\n'
+                '{"question":"関数とは何ですか？","answer":"関数は値を返します。","language":"ja"}\n',
                 encoding="utf-8",
             )
             records = read_instruction_records(path)
@@ -73,7 +73,7 @@ class TrainingCorpusTests(unittest.TestCase):
             (root / "knowledge.json").write_text("[]", encoding="utf-8")
             (root / "dialogue.jsonl").write_text("", encoding="utf-8")
             (root / "oasst.jsonl").write_text(
-                '{"question":"Bonjour, comment créer une fonction ?","answer":"Une fonction retourne un résultat.","language":"fr"}\\n',
+                '{"question":"Bonjour, comment créer une fonction ?","answer":"Une fonction retourne un résultat.","language":"fr"}\n',
                 encoding="utf-8",
             )
             examples = build_instruction_examples(
@@ -93,7 +93,7 @@ class TrainingCorpusTests(unittest.TestCase):
             (root / "dialogue.jsonl").write_text("", encoding="utf-8")
             (root / "oasst.jsonl").write_text("", encoding="utf-8")
             (root / "mbpp.jsonl").write_text(
-                '{"question":"Задача Python: сложить два числа","answer":"def add(a, b):\\n    return a + b"}\n',
+                '{"question":"Задача Python: сложить два числа","answer":"def add(a, b):\n    return a + b"}\n',
                 encoding="utf-8",
             )
             (root / "project.jsonl").write_text(
@@ -114,7 +114,7 @@ class TrainingCorpusTests(unittest.TestCase):
         prompt = "Response language: Russian.\nUser: Что такое функция в Python?\nAssistant:"
         answer = "Функция — это именованный блок кода, который выполняет задачу и может вернуть результат."
         tokenizer = CharTokenizer.from_texts([prompt, answer, prompt + "\nSWIN:"])
-        windows = build_sft_windows([(prompt, answer)], tokenizer, block_size=96)
+        windows = build_sft_windows([(prompt, answer)], tokenizer, block_size=96, prompt_budget=80)
         self.assertTrue(windows)
 
         input_ids, targets = windows[0]
