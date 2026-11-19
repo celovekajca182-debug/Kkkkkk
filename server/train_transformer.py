@@ -48,7 +48,7 @@ def build_instruction_examples(
     def add(prompt: str, answer: str):
         prompt = prompt.strip()
         answer = answer.strip()
-        question_key = prompt.split("\nПользователь:", 1)[-1].strip()
+        question_key = prompt.rsplit("Пользователь:", 1)[-1].strip()
         key = (question_key.casefold(), answer.casefold())
         if prompt and answer and key not in seen:
             seen.add(key)
