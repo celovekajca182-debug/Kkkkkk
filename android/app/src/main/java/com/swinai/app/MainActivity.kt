@@ -5,7 +5,9 @@ import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.view.ContextThemeWrapper
 import android.content.res.Configuration
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.graphics.Color
 import android.graphics.Typeface
@@ -549,6 +551,15 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun dialogBuilder(): AlertDialog.Builder {
+        val dialogTheme = if (isDarkTheme()) {
+            android.R.style.Theme_Material_Dialog_Alert
+        } else {
+            android.R.style.Theme_Material_Light_Dialog_Alert
+        }
+        return AlertDialog.Builder(ContextThemeWrapper(this, dialogTheme))
+    }
+
     private fun showThemeSettings() {
         val options = arrayOf("Как в системе", "Светлая", "Тёмная")
         val selected = when (themeMode) {
@@ -556,7 +567,7 @@ class MainActivity : Activity() {
             "dark" -> 2
             else -> 0
         }
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle("Оформление SWIN AI")
             .setSingleChoiceItems(options, selected) { dialog, which ->
                 themeMode = when (which) {
@@ -754,7 +765,7 @@ class MainActivity : Activity() {
             "Очистить историю чата",
             "Выйти из аккаунта"
         )
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle("Настройки")
             .setItems(options) { _, which ->
                 when (which) {
@@ -890,7 +901,7 @@ class MainActivity : Activity() {
                 runOnUiThread { renderMemorySettings(items) }
             } catch (error: Exception) {
                 runOnUiThread {
-                    AlertDialog.Builder(this)
+                    dialogBuilder()
                         .setTitle("Память SWIN")
                         .setMessage("Не удалось загрузить сохранённые факты.\n" + (error.message ?: "Проверь соединение с сервером."))
                         .setPositiveButton("Повторить") { _, _ -> showMemorySettings() }
@@ -980,7 +991,7 @@ class MainActivity : Activity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, chatDp(300)).apply {
             topMargin = chatDp(12)
         })
-        val dialog = AlertDialog.Builder(this)
+        val dialog = dialogBuilder()
             .setTitle("Долговременная память")
             .setView(root)
             .setPositiveButton("Готово", null)
@@ -1023,7 +1034,7 @@ class MainActivity : Activity() {
                 chatColor("muted")
             ).apply { setPadding(0, chatDp(8), 0, 0) })
         }
-        val dialog = AlertDialog.Builder(this)
+        val dialog = dialogBuilder()
             .setTitle("Новый факт памяти")
             .setView(wrapper)
             .setPositiveButton("Сохранить", null)
@@ -1056,7 +1067,7 @@ class MainActivity : Activity() {
                 }
             } catch (error: Exception) {
                 runOnUiThread {
-                    AlertDialog.Builder(this)
+                    dialogBuilder()
                         .setTitle("Не удалось сохранить")
                         .setMessage(error.message ?: "Проверь подключение к серверу.")
                         .setPositiveButton("Повторить") { _, _ -> saveMemoryFact(value) }
@@ -1104,7 +1115,7 @@ class MainActivity : Activity() {
             "日本語"
         )
         val selected = codes.indexOf(responseLanguage).coerceAtLeast(0)
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle("Язык ответа SWIN")
             .setSingleChoiceItems(labels, selected) { dialog, which ->
                 responseLanguage = codes[which]
@@ -1129,7 +1140,7 @@ class MainActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             setSingleLine(true)
         }
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle("Подключение")
             .setMessage("Адрес API-сервера")
             .setView(field)
@@ -1147,7 +1158,7 @@ class MainActivity : Activity() {
     }
 
     private fun confirmClearChatMemory() {
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle("Очистить историю чата?")
             .setMessage("Будут удалены сообщения этой переписки с сервера и резервная копия на телефоне. Сохранённые факты памяти SWIN останутся.")
             .setPositiveButton("Очистить") { _, _ -> clearChatMemory() }
@@ -1398,7 +1409,29 @@ class MainActivity : Activity() {
         }
         languageSpinner = Spinner(this).apply {
             val langs = listOf("Автоопределение","Python","Godot 4 / GDScript","Kotlin","Java","JavaScript","TypeScript","C","C++","C#","Go","Rust","PHP","Ruby","Swift","Dart","SQL","Bash / Shell","PowerShell","Lua","R","Scala","Perl","Elixir","Haskell","HTML","CSS","XML","JSON","YAML","TOML","Dockerfile","GLSL / Shaders","Solidity","Другой язык")
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, langs)
+            adapter = object : ArrayAdapter<String>(
+                this@MainActivity,
+                android.R.layout.simple_spinner_item,
+                langs
+            ) {
+                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                    return (super.getView(position, convertView, parent) as TextView).apply {
+                        setTextColor(chatColor("ink"))
+                        textSize = 14f
+                        setPadding(chatDp(12), 0, chatDp(10), 0)
+                    }
+                }
+
+                override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
+                    return (super.getDropDownView(position, convertView, parent) as TextView).apply {
+                        setTextColor(chatColor("ink"))
+                        setBackgroundColor(chatColor("panel"))
+                        textSize = 14f
+                        setPadding(chatDp(14), chatDp(12), chatDp(12), chatDp(12))
+                    }
+                }
+            }.also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            background = chatBg(chatColor("panel"), 10, chatColor("stroke"))
         }
         projectContextInput = makeEdit("Код или структура проекта (необязательно)",
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE, false).apply {
@@ -1412,13 +1445,20 @@ class MainActivity : Activity() {
         activitySwitch = Switch(this).apply {
             text = "Показывать этапы проверки"
             setTextColor(muted)
+            thumbTintList = ColorStateList.valueOf(accent)
+            trackTintList = ColorStateList.valueOf(chatColor("stroke"))
             setOnCheckedChangeListener { _, checked -> showCodingActivity = checked }
         }
         copyCodeButton = makeButton("Скопировать последний код") {
             val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             cb.setPrimaryClip(ClipData.newPlainText("SWIN AI code", lastGeneratedCode))
             Toast.makeText(this, "Код скопирован", Toast.LENGTH_SHORT).show()
-        }.apply { isEnabled = false }
+        }.apply {
+            isEnabled = false
+            setTextColor(accent)
+            background = chatBg(chatColor("codePill"), 12, chatColor("stroke"))
+            stateListAnimator = null
+        }
         codingPanel.addView(makeText("РЕЖИМ РАЗРАБОТКИ", 11f, accent).apply {
             letterSpacing = 0.08f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
