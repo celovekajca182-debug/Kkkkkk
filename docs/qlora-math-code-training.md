@@ -21,6 +21,12 @@ Dataset and model cards:
 - https://huggingface.co/datasets/google-research-datasets/mbpp
 - https://huggingface.co/datasets/nvidia/OpenCodeReasoning
 
+## Use the model you train on Google Drive
+
+The command-line argument `--base-model` accepts either a Hugging Face model ID or a local Hugging Face model directory. In Colab, mount Drive and set `DRIVE_BASE_MODEL_PATH` in the notebook to that directory, for example `/content/drive/MyDrive/SWIN_AI/my-base-model`. It must contain `config.json`, tokenizer files, and model weight files such as `.safetensors` or `.bin`.
+
+A lone `.pt`, `.pth`, `.ckpt`, `.gguf`, or a folder containing only training checkpoints is not automatically interchangeable with a Hugging Face Transformers model. Its architecture and export format must be identified first; do not point `--base-model` at an arbitrary checkpoint file.
+
 ## Google Colab
 
 1. Open notebooks/SWIN_AI_QLoRA_Colab.ipynb in Colab. The notebook keeps Colab's preinstalled CUDA-enabled PyTorch rather than replacing it.
