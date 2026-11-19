@@ -43,6 +43,12 @@ import kotlin.concurrent.thread
 private class ApiException(val statusCode: Int, message: String) : Exception(message)
 
 class MainActivity : Activity() {
+    private companion object {
+        const val REQUEST_PICK_IMAGES = 7401
+        const val REQUEST_IMPORT_PROJECT = 7402
+        const val REQUEST_EXPORT_PROJECT = 7403
+    }
+
     private lateinit var endpoint: EditText
     private lateinit var emailInput: EditText
     private lateinit var passwordInput: EditText
@@ -61,6 +67,7 @@ class MainActivity : Activity() {
     private lateinit var projectContextInput: EditText
     private lateinit var copyCodeButton: Button
     private lateinit var attachmentPreview: LinearLayout
+    private lateinit var attachmentScroll: HorizontalScrollView
     private val pendingImageAttachments = mutableListOf<ChatImageAttachment>()
     private var pendingProjectExportId: String? = null
     private data class ChatImageAttachment(
@@ -2331,7 +2338,7 @@ class MainActivity : Activity() {
             visibility = View.GONE
             setPadding(chatDp(4), chatDp(5), chatDp(4), chatDp(5))
         }
-        val attachmentScroll = HorizontalScrollView(this).apply {
+        attachmentScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             visibility = View.GONE
             addView(attachmentPreview, ViewGroup.LayoutParams(-2, -2))
@@ -2464,6 +2471,7 @@ class MainActivity : Activity() {
         if (!::attachmentPreview.isInitialized) return
         attachmentPreview.removeAllViews()
         attachmentPreview.visibility = if (pendingImageAttachments.isEmpty()) View.GONE else View.VISIBLE
+        attachmentScroll.visibility = attachmentPreview.visibility
         for ((index, attachment) in pendingImageAttachments.withIndex()) {
             val chip = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -2650,7 +2658,8 @@ class MainActivity : Activity() {
 
     private fun sendMessage() {
         val message = chatInput.text.toString().trim()
-        if (message.isEmpty()) return
+        val imagePayloads = pendingImageAttachments.map { it.dataUrl }
+        if (message.isEmpty() && imagePayloads.isEmpty()) return
         val token = authToken
         if (token.isNullOrBlank()) {
             clearLocalSession("Сначала войди в аккаунт.")
@@ -2679,20 +2688,52 @@ class MainActivity : Activity() {
         val requestCodeMode = isCodeMode
         val selectedResponseLanguage = responseLanguage
         val requestSessionId = sessionId
+        val userDisplayMessage = if (imagePayloads.isNotEmpty()) {
+            (message + "\\n").takeIf { message.isNotBlank() }.orEmpty() +
+                "📷 ${imagePayloads.size} фото прикреплено"
+        } else message
 
         chatInput.text.clear()
         removeWelcomePanel()
-        appendChatMessage("user", message)
-        cacheLocalMessage("user", message, requestSessionId)
+        appendChatMessage("user", userDisplayMessage)
+        cacheLocalMessage("user", userDisplayMessage, requestSessionId)
+        pendingImageAttachments.forEach { it.thumbnail.recycle() }
+        pendingImageAttachments.clear()
+        renderImageAttachments()
         val pendingReply = appendChatMessage(
             "assistant",
-            if (requestCodeMode) "Готовлю результат…" else "Думаю…"
+            when {
+                imagePayloads.isNotEmpty() -> "Рассматриваю фотографии…"
+                requestCodeMode -> "Готовлю результат…"
+                else -> "Думаю…"
+            }
         )
         sendButton.isEnabled = false
 
         thread {
             try {
-                if (requestCodeMode) {
+                if (imagePayloads.isNotEmpty()) {
+                    val imageArray = JSONArray()
+                    imagePayloads.forEach { imageArray.put(it) }
+                    val response = requestJson(
+                        "/vision/analyze",
+                        JSONObject()
+                            .put("question", message)
+                            .put("session_id", requestSessionId)
+                            .put("response_language", selectedResponseLanguage)
+                            .put("images", imageArray),
+                        token
+                    )
+                    val answer = response.optString("answer", "Модель не вернула описание фотографии.")
+                    runOnUiThread {
+                        if (sessionId == requestSessionId) {
+                            pendingReply?.let { chatMessages.removeView(it) }
+                            appendChatMessage("assistant", answer)
+                            cacheLocalMessage("assistant", answer, requestSessionId)
+                        }
+                        sendButton.isEnabled = true
+                    }
+                } else if (requestCodeMode) {
                     val payload = JSONObject()
                         .put("task", message)
                         .put("language", selectedCodingLanguage)
