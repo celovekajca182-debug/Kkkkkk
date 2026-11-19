@@ -57,6 +57,32 @@ class ChatHistoryStoreTests(unittest.TestCase):
             self.assertEqual(store.messages(1, "one"), [])
             self.assertEqual(len(store.messages(1, "two")), 2)
 
+    def test_user_memories_persist_and_are_isolated_by_account(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "history.sqlite3"
+            first = ChatHistoryStore(path)
+            first.save_memory(1, "pref-1", "Предпочитаю русский язык", "preference")
+            first.save_memory(1, "project-1", "Работаю над SWIN AI", "project")
+            first.save_memory(2, "pref-1", "English only", "preference")
+
+            reopened = ChatHistoryStore(path)
+            first_items = reopened.memories(1)
+            second_items = reopened.memories(2)
+            self.assertEqual(len(first_items), 2)
+            self.assertEqual(len(second_items), 1)
+            self.assertEqual(second_items[0]["value"], "English only")
+
+            reopened.save_memory(1, "pref-1", "Русский язык по умолчанию", "preference")
+            self.assertEqual(len(reopened.memories(1)), 2)
+            self.assertEqual(reopened.memories(1)[-1]["value"], "Русский язык по умолчанию")
+
+            self.assertEqual(reopened.delete_memory(1, "project-1"), 1)
+            self.assertEqual(len(reopened.memories(1)), 1)
+            self.assertEqual(reopened.delete_memory(1), 1)
+            self.assertEqual(reopened.memories(1), [])
+            self.assertEqual(len(reopened.memories(2)), 1)
+
+
 
 if __name__ == "__main__":
     unittest.main()
