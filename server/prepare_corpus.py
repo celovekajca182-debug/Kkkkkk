@@ -7,6 +7,7 @@
 Скрипт не загружает чужие веса и не вызывает внешние AI API.
 """
 import argparse
+import hashlib
 import html
 import json
 import random
@@ -230,7 +231,7 @@ def load_finewiki_documents(
         if len(body) > max_doc_chars:
             body = body[:max_doc_chars].rsplit(" ", 1)[0].strip()
         document = title + "\n" + body
-        fingerprint = str(hash(document))
+        fingerprint = hashlib.sha256(document.encode("utf-8")).hexdigest()
         if fingerprint in seen_texts:
             continue
         if total_chars + len(document) > max_chars:
