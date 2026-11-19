@@ -2,10 +2,12 @@ import unittest
 
 from assistant_core import (
     build_reasoning_prompt,
+    build_search_queries,
     is_safe_public_url,
     memory_category,
     memory_key_for,
     parse_memory_command,
+    select_relevant_memories,
     should_research,
     validate_memory_value,
 )
@@ -22,6 +24,21 @@ class AssistantCoreTests(unittest.TestCase):
         self.assertTrue(should_research("Find the current release date"))
         self.assertFalse(should_research("Привет, как дела?"))
         self.assertFalse(should_research("Объясни, что такое цикл for"))
+
+    def test_search_query_expansion_removes_command_filler(self):
+        queries = build_search_queries("Поищи последние новости о Godot 4")
+        self.assertEqual(len(queries), 2)
+        self.assertIn("Поищи", queries[0])
+        self.assertEqual(queries[1], "последние новости о Godot 4")
+
+    def test_memory_retrieval_prefers_relevant_project_facts(self):
+        memories = [
+            {"value": "Предпочитаю русский язык", "category": "preference"},
+            {"value": "Мой проект использует Godot 4 и NavigationRegion3D", "category": "project"},
+            {"value": "Люблю путешествовать", "category": "note"},
+        ]
+        selected = select_relevant_memories("Как настроить NavigationRegion3D в Godot?", memories)
+        self.assertEqual(selected[0]["category"], "project")
 
     def test_search_url_filter_rejects_non_https_and_local_addresses(self):
         self.assertTrue(is_safe_public_url("https://docs.python.org/3/library/"))
