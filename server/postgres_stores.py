@@ -317,6 +317,9 @@ def migrate_sqlite_to_postgres(sqlite_path: str | Path, database_url: str) -> di
     finally:
         source.close()
 
+    if not old_users and not old_tokens and not old_messages:
+        return {"users": 0, "tokens": 0, "messages": 0}
+
     copied_users = copied_tokens = copied_messages = 0
     with _connect(database_url) as db:
         db.execute(
