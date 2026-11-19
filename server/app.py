@@ -241,7 +241,12 @@ def looks_like_garbage(text: str) -> bool:
         if len(set(letters)) / len(letters) < 0.18:
             return True
 
-    has_cjk = any("\u4e00" <= char <= "\u9fff" for char in value)
+    has_cjk = any(
+        "\u4e00" <= char <= "\u9fff"
+        or "\u3040" <= char <= "\u30ff"
+        or "\uac00" <= char <= "\ud7af"
+        for char in value
+    )
     words = re.findall(r"[a-zа-яё]{2,}", value.lower())
     if len(letters) >= 16 and len(words) < 2 and not has_cjk:
         return True
