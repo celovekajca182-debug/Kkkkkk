@@ -5,6 +5,7 @@ import urllib.request
 from collections import OrderedDict, defaultdict, deque
 from pathlib import Path
 from threading import Lock
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -124,6 +125,16 @@ class CodeAssistRequest(BaseModel):
 
 class ClearMemoryRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=80)
+
+
+class HistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=120000)
+
+
+class SyncMemoryRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=80)
+    messages: list[HistoryMessage] = Field(default_factory=list, max_length=80)
 
 
 def record_chat_turn(
@@ -314,6 +325,26 @@ def get_memory_history(
     """Return only the authenticated user's messages for the requested session."""
     messages = chat_history.messages(int(user["id"]), session_id, limit=80)
     return {"session_id": session_id, "messages": messages, "count": len(messages)}
+
+
+@app.post("/memory/sync")
+def sync_memory(
+    request: SyncMemoryRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Restore a device backup only if no server-side history exists for this session."""
+    restored = chat_history.restore_messages(
+        int(user["id"]),
+        request.session_id,
+        [item.model_dump() for item in request.messages],
+    )
+    messages = chat_history.messages(int(user["id"]), request.session_id, limit=80)
+    return {
+        "ok": True,
+        "restored": restored,
+        "count": len(messages),
+        "session_id": request.session_id,
+    }
 
 
 @app.post("/code/assist")
