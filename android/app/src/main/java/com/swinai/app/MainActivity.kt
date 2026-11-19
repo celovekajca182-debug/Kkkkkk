@@ -863,6 +863,7 @@ class MainActivity : Activity() {
                         .put("research_web", true)
                         .put("show_activity", includeCodingActivity)
                         .put("project_context", selectedProjectContext)
+                        .put("session_id", sessionId)
                     val response = requestJson("/code/assist", payload, token)
                     val output = StringBuilder()
                     output.append("\nSWIN AI • РЕЖИМ РАЗРАБОТКИ\n")
