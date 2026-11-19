@@ -2,6 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from transformer import CharTokenizer
+
 from train_transformer import (
     build_instruction_corpus,
     build_pretraining_corpus,
@@ -71,11 +73,14 @@ class TrainingCorpusTests(unittest.TestCase):
         alphabet = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
         train = alphabet * 40
         validation = "БВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯА" * 20
-        train_data, validation_data = build_tensor_splits(train, validation, block_size=32)
+        tokenizer = CharTokenizer.from_texts([train, validation])
+        train_data, validation_data = build_tensor_splits(
+            train, validation, block_size=32, tokenizer=tokenizer
+        )
         self.assertGreater(train_data.numel(), 900)
         self.assertGreater(validation_data.numel(), 400)
-        self.assertEqual(train_data[:2].tolist(), [208, 144])
-        self.assertEqual(validation_data[:2].tolist(), [208, 145])
+        self.assertEqual(tokenizer.decode(train_data[:2].tolist()), train[:2])
+        self.assertEqual(tokenizer.decode(validation_data[:2].tolist()), validation[:2])
 
 
 if __name__ == "__main__":
