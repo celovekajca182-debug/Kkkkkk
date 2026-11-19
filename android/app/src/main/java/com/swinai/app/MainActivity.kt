@@ -610,6 +610,10 @@ class MainActivity : Activity() {
             ).apply {
                 setLineSpacing(chatDp(3).toFloat(), 1f)
                 setTextIsSelectable(true)
+                setLinkTextColor(chatColor("accent"))
+                autoLinkMask = Linkify.WEB_URLS
+                linksClickable = true
+                movementMethod = LinkMovementMethod.getInstance()
                 if (monospace) {
                     typeface = Typeface.create("monospace", Typeface.NORMAL)
                     background = chatBg(chatColor("codeBubble"), 9)
@@ -711,7 +715,22 @@ class MainActivity : Activity() {
             addBody(value)
         }
 
-        val maxW = (resources.displayMetrics.widthPixels * 0.88f).toInt()
+        removeWelcomePanel()
+        if (!user) {
+            val avatar = TextView(this).apply {
+                text = "S"
+                textSize = 11f
+                gravity = Gravity.CENTER
+                typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                setTextColor(chatColor("sendText"))
+                background = chatBg(chatColor("accent"), 10)
+            }
+            row.addView(avatar, LinearLayout.LayoutParams(chatDp(27), chatDp(27)).apply {
+                marginEnd = chatDp(7)
+                topMargin = chatDp(4)
+            })
+        }
+        val maxW = (resources.displayMetrics.widthPixels * if (user) 0.88f else 0.80f).toInt()
         row.addView(card, LinearLayout.LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT))
         chatMessages.addView(row, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
         chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
@@ -1141,7 +1160,8 @@ class MainActivity : Activity() {
             getPreferences(MODE_PRIVATE).edit().remove(localHistoryKey()).apply()
             runOnUiThread {
                 chatMessages.removeAllViews()
-                appendChatMessage("assistant", "История чата очищена. Сохранённые факты памяти не затронуты.")
+                welcomePanel = null
+                showWelcomePanel()
                 val message = if (serverCleared) "История очищена на сервере и телефоне."
                     else "Копия на телефоне очищена. Сервер временно недоступен."
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
@@ -1498,7 +1518,7 @@ class MainActivity : Activity() {
     private fun loadChatHistory() {
         val token = authToken
         if (token.isNullOrBlank() || sessionId.isBlank()) {
-            appendChatMessage("assistant", "Привет! Я SWIN AI. Чем могу помочь?")
+            showWelcomePanel()
             return
         }
         thread {
@@ -1528,7 +1548,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     chatMessages.removeAllViews()
                     if (messages.length() == 0) {
-                        appendChatMessage("assistant", "Привет! Я SWIN AI. Чем могу помочь?")
+                        showWelcomePanel()
                     } else {
                         for (index in 0 until messages.length()) {
                             val item = messages.optJSONObject(index) ?: continue
@@ -1552,7 +1572,7 @@ class MainActivity : Activity() {
             } catch (_: Exception) {
                 runOnUiThread {
                     if (chatMessages.childCount == 0) {
-                        appendChatMessage("assistant", "Привет! Я SWIN AI. Чем могу помочь?")
+                        showWelcomePanel()
                     }
                 }
             }
@@ -1619,6 +1639,7 @@ class MainActivity : Activity() {
         val selectedResponseLanguage = responseLanguage
 
         chatInput.text.clear()
+        removeWelcomePanel()
         appendChatMessage("user", message)
         cacheLocalMessage("user", message)
         val pendingReply = appendChatMessage(
@@ -1769,14 +1790,10 @@ class MainActivity : Activity() {
                         token
                     )
                     val answer = response.optString("answer", "Сервер вернул пустой ответ.")
-                    val elapsed = response.optDouble("generation_ms", -1.0)
-                    val mode = response.optString("mode", "unknown")
-                    val language = response.optString("response_language", selectedResponseLanguage)
-                    val meta = if (elapsed >= 0) "\n[$mode • $language • $elapsed мс]" else "\n[$mode • $language]"
                     runOnUiThread {
                         pendingReply?.let { chatMessages.removeView(it) }
-                        appendChatMessage("assistant", "$answer$meta")
-                        cacheLocalMessage("assistant", "$answer$meta")
+                        appendChatMessage("assistant", answer)
+                        cacheLocalMessage("assistant", answer)
                         sendButton.isEnabled = true
                     }
                 }
