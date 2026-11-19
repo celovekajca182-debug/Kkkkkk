@@ -101,6 +101,24 @@ class LlmProviderTests(unittest.TestCase):
         self.assertEqual(chat_request.get_header("Authorization"), "Bearer chat-secret")
         self.assertEqual(code_request.get_header("Authorization"), "Bearer code-secret")
 
+    def test_thinking_trace_is_removed_from_visible_answer(self):
+        self.assertEqual(
+            llm_provider._remove_private_reasoning("private trace</think>Final answer"),
+            "Final answer",
+        )
+        self.assertEqual(
+            llm_provider._remove_private_reasoning("<think>private</think>Answer"),
+            "Answer",
+        )
+        self.assertEqual(
+            llm_provider._remove_private_reasoning("Plain answer"),
+            "Plain answer",
+        )
+        self.assertEqual(
+            llm_provider._remove_private_reasoning("Answer <think>unfinished private trace"),
+            "Answer",
+        )
+
     def test_empty_prompt_is_rejected(self):
         with patch.object(llm_provider, "BASE_URL", "https://inference.example/v1"):
             with self.assertRaises(ValueError):
