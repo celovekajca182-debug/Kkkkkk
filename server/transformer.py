@@ -186,6 +186,27 @@ class SWINTransformerEncoder(nn.Module):
         return x, new_caches
 
 
+def suppress_repeated_ngrams(
+    logits: torch.Tensor,
+    history: list[int],
+    ngram_size: int,
+) -> torch.Tensor:
+    """Prevent greedy decoding from repeating an already emitted n-gram."""
+    if ngram_size <= 1 or len(history) < ngram_size - 1:
+        return logits
+    prefix = tuple(history[-(ngram_size - 1):])
+    blocked = set()
+    for index in range(len(history) - ngram_size + 1):
+        if tuple(history[index:index + ngram_size - 1]) == prefix:
+            blocked.add(history[index + ngram_size - 1])
+    if blocked:
+        logits = logits.clone()
+        valid = [token for token in blocked if 0 <= token < logits.numel()]
+        if valid:
+            logits[torch.tensor(valid, dtype=torch.long, device=logits.device)] = float("-inf")
+    return logits
+
+
 class SWINTransformer(nn.Module):
     """Small decoder-only Transformer trained from scratch on next-byte prediction."""
 
@@ -277,6 +298,7 @@ class SWINTransformer(nn.Module):
         temperature: float = 0.0,
         top_k: int = 1,
         stop_at_newline: bool = True,
+        no_repeat_ngram_size: int = 6,
     ) -> str:
         self.eval()
         tokenizer = self.tokenizer
@@ -292,7 +314,11 @@ class SWINTransformer(nn.Module):
         generated: list[int] = []
 
         for _ in range(max(0, max_new_tokens)):
-            next_logits = logits[0, -1, :]
+            next_logits = suppress_repeated_ngrams(
+                logits[0, -1, :],
+                token_ids,
+                no_repeat_ngram_size,
+            )
             if temperature <= 0:
                 next_id = int(torch.argmax(next_logits).item())
             else:
