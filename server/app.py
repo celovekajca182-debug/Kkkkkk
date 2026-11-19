@@ -102,7 +102,7 @@ wiki_path = Path(os.getenv(
 ))
 wiki_url = os.getenv(
     "SWIN_WIKIPEDIA_CORPUS_URL",
-    "https://github.com/celovekajca182-debug/Kkkkkk/releases/download/swin-model-latest/finewiki_ru_train.txt",
+    "https://github.com/celovekajca182-debug/Kkkkkk/releases/download/swin-wikipedia-latest/finewiki_ru_train.txt",
 ).strip()
 
 # Restore the prepared Russian Wikipedia/FineWiki passages on ephemeral hosts.
@@ -369,7 +369,7 @@ def root():
         "wikipedia_articles": knowledge.wiki_articles,
         "wikipedia_passages": len(knowledge.wiki_entries),
         "vision_enabled": vision_enabled(),
-        "vision_model": os.getenv("SWIN_VISION_MODEL", "gpt-5.4-mini"),
+        "vision_model": os.getenv("SWIN_VISION_MODEL", "gpt-6.1-terra"),
         "active_sessions": len(conversation_memory),
         "auth": "email-password",
         "storage_backend": "postgresql" if database_url else "sqlite",
@@ -391,7 +391,7 @@ def health():
         "wikipedia_passages": len(knowledge.wiki_entries),
         "vision_enabled": vision_enabled(),
         "llm_provider_enabled": llm_enabled(),
-        "reasoning_model": os.getenv("SWIN_REASONING_MODEL", "gpt-5.4-mini") if llm_enabled() else None,
+        "reasoning_model": os.getenv("SWIN_REASONING_MODEL", "gpt-6.2-sol") if llm_enabled() else None,
         "storage_backend": "postgresql" if database_url else "sqlite",
         "persistent_storage": bool(database_url),
         "cross_device_memory": bool(database_url),
@@ -779,7 +779,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                     references=references,
                     research_performed=research_requested,
                     memory_used=bool(persistent_memories),
-                    generation_engine=os.getenv("SWIN_REASONING_MODEL", "gpt-5.4-mini"),
+                    generation_engine=os.getenv("SWIN_REASONING_MODEL", "gpt-6.2-sol"),
                     reasoning_mode="evidence_grounded_provider_generation",
                 )
             print("SWIN reasoning provider returned empty or low-quality output; trying local model.")
@@ -948,7 +948,7 @@ def analyze_attached_images(
         "response_language": language,
         "images_analyzed": len(request.images),
         "images_stored": False,
-        "vision_model": os.getenv("SWIN_VISION_MODEL", "gpt-5.4-mini"),
+        "vision_model": os.getenv("SWIN_VISION_MODEL", "gpt-6.1-terra"),
     }
 
 
@@ -963,13 +963,13 @@ def capabilities():
         "auto_detection": "heuristic",
         "vision": {
             "enabled": vision_enabled(),
-            "model": os.getenv("SWIN_VISION_MODEL", "gpt-5.4-mini"),
+            "model": os.getenv("SWIN_VISION_MODEL", "gpt-6.1-terra"),
             "max_images_per_request": 3,
             "image_uploads_are_persisted": False,
         },
         "reasoning": {
             "provider_enabled": llm_enabled(),
-            "model": os.getenv("SWIN_REASONING_MODEL", "gpt-5.4-mini") if llm_enabled() else "local_swin_transformer",
+            "model": os.getenv("SWIN_REASONING_MODEL", "gpt-6.2-sol") if llm_enabled() else "local_swin_transformer",
             "fallback": "local_swin_transformer",
         },
         "knowledge": {
