@@ -116,7 +116,7 @@ def analyze_images(
         })
 
     payload = {
-        "model": os.getenv("SWIN_VISION_MODEL", "gpt-5.4-mini").strip(),
+        "model": os.getenv("SWIN_VISION_MODEL", "gpt-6.1-terra").strip(),
         "input": [{"role": "user", "content": content}],
         "max_output_tokens": 900,
         "store": False,
