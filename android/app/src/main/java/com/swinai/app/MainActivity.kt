@@ -1008,7 +1008,7 @@ class MainActivity : Activity() {
                         output.append(code)
                         output.append("\n")
                     } else {
-                        output.append("\nКод не создан: проверь, загружены ли веса модели на сервер.\n")
+                        output.append("\nНе удалось подготовить код, который прошёл проверку. Уточни задачу или попробуй снова.\n")
                     }
 
                     if (includeCodingActivity) {
