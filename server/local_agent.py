@@ -224,6 +224,6 @@ def capability_report() -> dict[str, Any]:
         "vision": {
             "enabled": False,
             "reason": "В локальной сборке нет установленной мультимодальной модели.",
-            "metadata_only_fallback": True,
+            "metadata_only_fallback": False,
         },
     }
