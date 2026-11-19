@@ -13,7 +13,14 @@ from pydantic import BaseModel, Field
 
 from auth import AuthStore, TOKEN_TTL_SECONDS, validate_email
 from chat_history import ChatHistoryStore
-from coding_agent import run_code_assist
+from coding_agent import LANGUAGES as CODE_LANGUAGES, run_code_assist
+from language_support import (
+    SUPPORTED_CHAT_LANGUAGES,
+    format_chat_prompt,
+    localized_fallback,
+    localized_small_talk,
+    resolve_response_language,
+)
 from postgres_stores import (
     PostgresAuthStore,
     PostgresChatHistoryStore,
@@ -130,6 +137,7 @@ class RegisterRequest(AuthRequest):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     session_id: str = Field(min_length=1, max_length=80)
+    response_language: str = Field(default="auto", min_length=2, max_length=16)
 
 
 class CodeAssistRequest(BaseModel):
@@ -233,8 +241,9 @@ def looks_like_garbage(text: str) -> bool:
         if len(set(letters)) / len(letters) < 0.18:
             return True
 
+    has_cjk = any("\u4e00" <= char <= "\u9fff" for char in value)
     words = re.findall(r"[a-zа-яё]{2,}", value.lower())
-    if len(letters) >= 16 and len(words) < 2:
+    if len(letters) >= 16 and len(words) < 2 and not has_cjk:
         return True
 
     # A chat answer should not be a long unbroken token or a repeated vowel stream.
@@ -251,10 +260,11 @@ def looks_like_garbage(text: str) -> bool:
             dominant = counts.most_common(1)[0][1] / len(trigrams)
             if diversity < 0.36 or dominant > 0.16:
                 return True
-        vowel_count = sum(char in "аеёиоуыэюяaeiou" for char in letters)
-        vowel_ratio = vowel_count / len(letters)
-        if vowel_ratio > 0.68 or vowel_ratio < 0.12:
-            return True
+        if not has_cjk:
+            vowel_count = sum(char in "аеёиоуыэюяaeiou" for char in letters)
+            vowel_ratio = vowel_count / len(letters)
+            if vowel_ratio > 0.68 or vowel_ratio < 0.12:
+                return True
 
     return False
 
@@ -466,12 +476,15 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     if not session_id:
         raise HTTPException(status_code=422, detail="session_id не должен быть пустым.")
 
+    response_language = resolve_response_language(message, request.response_language)
     memory_key = f"{user['id']}:{session_id}"
     history = chat_history.turns(int(user["id"]), session_id, limit=MAX_TURNS_PER_SESSION)
     if not history:
         history = conversation_memory.get(memory_key, [])
 
-    small_talk = safe_small_talk(message)
+    small_talk = localized_small_talk(message, response_language)
+    if small_talk is None and response_language == "ru":
+        small_talk = safe_small_talk(message)
     if small_talk is not None:
         turns = record_chat_turn(
             memory_key, int(user["id"]), session_id, message, small_talk
@@ -481,38 +494,39 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             "mode": "safe_small_talk",
             "source": "встроенный безопасный ответ",
             "confidence": 1.0,
+            "response_language": response_language,
             "memory_turns": turns,
             "generation_ms": round((time.perf_counter() - started_at) * 1000, 1),
         }
 
-    # Retrieval returns known verified facts without invoking token-by-token generation.
-    match = knowledge.search(message)
-    if match is not None:
-        answer = match["answer"]
-        turns = record_chat_turn(memory_key, int(user['id']), session_id, message, answer)
-        return {
-            "answer": answer,
-            "mode": "local_knowledge",
-            "source": match["title"],
-            "confidence": round(match["score"], 3),
-            "memory_turns": turns,
-            "generation_ms": round((time.perf_counter() - started_at) * 1000, 1),
-        }
+    # The current curated KnowledgeBase is Russian-only. Never return its Russian
+    # answer when the user selected a different response language.
+    if response_language == "ru":
+        match = knowledge.search(message)
+        if match is not None:
+            answer = match["answer"]
+            turns = record_chat_turn(memory_key, int(user["id"]), session_id, message, answer)
+            return {
+                "answer": answer,
+                "mode": "local_knowledge",
+                "source": match["title"],
+                "confidence": round(match["score"], 3),
+                "response_language": response_language,
+                "memory_turns": turns,
+                "generation_ms": round((time.perf_counter() - started_at) * 1000, 1),
+            }
 
     if transformer_model is not None:
-        prompt_parts = []
-        for old_user, old_answer in history[-MAX_TURNS_PER_SESSION:]:
-            prompt_parts.append(f"Пользователь: {old_user}\nSWIN: {old_answer}")
-        prompt_parts.append(f"Пользователь: {message}\nSWIN:")
-        prompt = "\n".join(prompt_parts)
+        prompt = format_chat_prompt(history, message, response_language)
         try:
             generated_answer = transformer_model.generate(
                 prompt,
-                max_new_tokens=160,
+                max_new_tokens=200,
                 temperature=0.0,
                 top_k=1,
                 stop_at_newline=False,
             ).strip()
+            generated_answer = generated_answer.split("\nUser:", 1)[0].strip()
             generated_answer = generated_answer.split("\nПользователь:", 1)[0].strip()
             generation_valid = bool(generated_answer) and not looks_like_garbage(generated_answer)
             if generation_valid:
@@ -529,20 +543,17 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                     response_mode = "byte_transformer"
                     response_source = "собственные веса SWIN Transformer (UTF-8 bytes)"
             else:
-                answer = (
-                    "Я пока не могу надёжно ответить на этот вопрос: моя текущая модель "
-                    "не сформировала связный текст. Попробуй уточнить вопрос или спросить "
-                    "о программировании, Android либо Godot."
-                )
+                answer = localized_fallback(response_language)
                 response_mode = "safe_fallback"
                 response_source = "защита от бессвязной генерации"
-            turns = record_chat_turn(memory_key, int(user['id']), session_id, message, answer)
+            turns = record_chat_turn(memory_key, int(user["id"]), session_id, message, answer)
             elapsed = max(time.perf_counter() - started_at, 0.001)
             response = {
                 "answer": answer,
                 "mode": response_mode,
                 "source": response_source,
                 "confidence": None,
+                "response_language": response_language,
                 "memory_turns": turns,
                 "generation_ms": round(elapsed * 1000, 1),
             }
@@ -565,7 +576,8 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
         except Exception as error:
             print(f"Transformer generation error: {error}")
 
-    if rnn_model is not None:
+    # The legacy RNN was trained only in Russian; never use it for other languages.
+    if rnn_model is not None and response_language == "ru":
         prompt = f"Пользователь: {message}\nSWIN:"
         try:
             generated = rnn_model.generate(prompt, length=220, temperature=0.75)
@@ -578,27 +590,40 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             response_mode = "character_rnn"
             response_source = "собственные веса SWIN RNN"
         else:
-            answer = (
-                "Я пока не могу надёжно ответить на этот вопрос: в моей базе знаний "
-                "нет подходящего материала, а генерация получилась бессвязной. "
-                "Попробуй уточнить тему или задать вопрос по Godot, Python либо Android."
-            )
+            answer = localized_fallback(response_language)
             response_mode = "safe_fallback"
             response_source = "защита от бессвязной генерации"
-        turns = record_chat_turn(memory_key, int(user['id']), session_id, message, answer)
+        turns = record_chat_turn(memory_key, int(user["id"]), session_id, message, answer)
         return {
             "answer": answer,
             "mode": response_mode,
             "source": response_source,
             "confidence": None,
+            "response_language": response_language,
             "memory_turns": turns,
             "generation_ms": round((time.perf_counter() - started_at) * 1000, 1),
         }
 
-    raise HTTPException(
-        status_code=503,
-        detail=(
-            "В базе знаний нет подходящего ответа, а обученные веса Transformer/RNN "
-            "не загружены. Добавь checkpoint модели на сервер."
-        ),
-    )
+    raise HTTPException(status_code=503, detail=localized_fallback(response_language))
+
+
+@app.get("/capabilities")
+def capabilities():
+    return {
+        "chat_languages": [
+            {"code": code, "label": label}
+            for code, label in SUPPORTED_CHAT_LANGUAGES.items()
+        ],
+        "default_chat_language": "auto",
+        "auto_detection": "heuristic",
+        "code_languages": [
+            {"code": code, "label": label}
+            for code, label in CODE_LANGUAGES.items()
+        ],
+        "code_validation": {
+            "execution": False,
+            "python": "AST parse only; program is not executed",
+            "json_xml_toml": "standard-library parser",
+            "other": "language-dependent static checks or delimiter scan",
+        },
+    }
