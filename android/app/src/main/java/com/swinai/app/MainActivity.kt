@@ -1257,12 +1257,12 @@ class MainActivity : Activity() {
                     output.append(response.optString("status", "unknown"))
                     val validation = response.optJSONObject("validation")
                     if (validation != null) {
-                        output.append("\n\${labels["syntax"]}: ")
+                        output.append("\n" + (labels["syntax"] ?: "Syntax check") + ": ")
                         output.append(validation.optString("message", "не выполнена"))
                     }
                     val verification = response.optJSONObject("verification")
                     if (verification != null) {
-                        output.append("\n\n\${labels["recheck"]}:")
+                        output.append("\n\n" + (labels["recheck"] ?: "Verification") + ":")
                         val checkNames = listOf("research", "syntax", "cross_check", "runtime_tests")
                         val checkLabels = mapOf(
                             "research" to (labels["research"] ?: "Research"),
@@ -1285,7 +1285,7 @@ class MainActivity : Activity() {
                     }
                     val code = response.optString("code", "")
                     if (code.isNotBlank()) {
-                        output.append("\n\n\${labels["code"]}:\n")
+                        output.append("\n\n" + (labels["code"] ?: "CODE") + ":\n")
                         output.append(code)
                         output.append("\n")
                     } else {
@@ -1297,7 +1297,7 @@ class MainActivity : Activity() {
                     if (includeCodingActivity) {
                         val plan = response.optJSONArray("plan")
                         if (plan != null && plan.length() > 0) {
-                            output.append("\n\${labels["plan"]}:\n")
+                            output.append("\n" + (labels["plan"] ?: "Work plan") + ":\n")
                             for (i in 0 until plan.length()) {
                                 output.append("• ")
                                 output.append(plan.optString(i))
@@ -1306,7 +1306,7 @@ class MainActivity : Activity() {
                         }
                         val activity = response.optJSONArray("activity")
                         if (activity != null && activity.length() > 0) {
-                            output.append("\n\${labels["stages"]}:\n")
+                            output.append("\n" + (labels["stages"] ?: "Stages") + ":\n")
                             for (i in 0 until activity.length()) {
                                 val item = activity.optJSONObject(i) ?: continue
                                 output.append("• ")
@@ -1320,7 +1320,7 @@ class MainActivity : Activity() {
                     // Research sources remain visible even when the detailed activity log is hidden.
                     val refs = response.optJSONArray("references")
                     if (refs != null && refs.length() > 0) {
-                        output.append("\n\${labels["sources"]}:\n")
+                        output.append("\n" + (labels["sources"] ?: "Sources") + ":\n")
                         for (i in 0 until refs.length()) {
                             val item = refs.optJSONObject(i) ?: continue
                             output.append("• ")
@@ -1334,7 +1334,7 @@ class MainActivity : Activity() {
                     }
                     val elapsed = response.optDouble("elapsed_ms", -1.0)
                     if (elapsed >= 0) {
-                        output.append("\n\${labels["time"]}: ")
+                        output.append("\n" + (labels["time"] ?: "Processing time") + ": ")
                         output.append(elapsed)
                         output.append(" " + (labels["ms"] ?: "ms"))
                     }
@@ -1352,7 +1352,8 @@ class MainActivity : Activity() {
                             copyCodeButton.isEnabled = true
                         }
                         if (code.isNotBlank()) {
-                            val summary = output.toString().substringBefore("\n\n${labels["code"]}:\n").trim()
+                            val codeHeader = "\n\n" + (labels["code"] ?: "CODE") + ":\n"
+                            val summary = output.toString().substringBefore(codeHeader).trim()
                             appendChatMessage("assistant", summary)
                             appendChatMessage("assistant", code, true, code)
                             cacheLocalMessage("assistant", summary + "\n\n[SWIN_CODE_BLOCK]\n" + code)
