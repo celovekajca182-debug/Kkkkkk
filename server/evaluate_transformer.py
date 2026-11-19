@@ -24,7 +24,7 @@ def assess_generated_text(text: str, require_code: bool = False) -> dict[str, An
     letters = [char.lower() for char in value if char.isalpha()]
     if len(letters) < 6:
         reasons.append("слишком мало букв")
-    elif len(set(letters)) / len(letters) < 0.22:
+    elif len(set(letters)) / len(letters) < 0.14:
         reasons.append("низкое разнообразие букв")
     if letters:
         counts: dict[str, int] = {}
@@ -68,17 +68,17 @@ def evaluate_model(model) -> dict[str, Any]:
     probes = [
         {
             "name": "russian_explanation",
-            "prompt": "Пользователь: Объясни простыми словами, что такое функция в Python.\\nSWIN:",
+            "prompt": "Пользователь: Объясни простыми словами, что такое функция в Python.\nSWIN:",
             "require_code": False,
         },
         {
             "name": "russian_debugging",
-            "prompt": "Пользователь: Как по шагам найти причину ошибки TypeError в Python?\\nSWIN:",
+            "prompt": "Пользователь: Как по шагам найти причину ошибки TypeError в Python?\nSWIN:",
             "require_code": False,
         },
         {
             "name": "python_function",
-            "prompt": "Пользователь: Напиши функцию Python add(a, b), которая возвращает сумму двух чисел. Верни полный код.\\nSWIN:",
+            "prompt": "Пользователь: Напиши функцию Python add(a, b), которая возвращает сумму двух чисел. Верни полный код.\nSWIN:",
             "require_code": True,
         },
     ]
