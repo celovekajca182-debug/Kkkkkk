@@ -633,7 +633,9 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             reasoning_mode="curated_retrieval",
         )
 
-    persistent_memories = select_relevant_memories(\n        message, chat_history.memories(user_id, limit=50), limit=8\n    )
+    persistent_memories = select_relevant_memories(
+        message, chat_history.memories(user_id, limit=50), limit=8
+    )
     if transformer_model is not None:
         tokenizer = getattr(transformer_model, "tokenizer", None)
         block_size = int(getattr(transformer_model, "block_size", 512))
