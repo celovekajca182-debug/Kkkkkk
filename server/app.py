@@ -170,6 +170,23 @@ register_local_tool(
         "message": "Исходник ещё не создан; код не исполнялся.",
     },
 )
+register_local_tool(
+    "project.validate_manifest",
+    lambda context: {
+        "file_count": len(context.get("files", [])),
+        "files": [
+            {
+                "path": item.get("path", ""),
+                "status": item.get("validation", {}).get("status", "not_run"),
+                "language": item.get("language", "other"),
+            }
+            for item in context.get("files", [])
+            if isinstance(item, dict)
+        ],
+        "scope": context.get("scope", "unknown"),
+        "runtime": "not_run",
+    },
+)
 print(
     "SWIN knowledge index loaded: "
     f"curated={len(knowledge.entries)}, "
@@ -604,10 +621,27 @@ def code_assist(
         "local_swin_transformer" if transformer_model is not None
         else "local_retrieval_and_static_tools"
     )
-    result["agent_plan"] = [
-        {"name": step.name, "purpose": step.purpose, "tool": step.tool}
-        for step in plan_task(request.task, request.response_language)
-    ]
+    result["agent"] = execute_local_plan(
+        request.task,
+        language=request.response_language,
+        context={
+            "user_id": int(user["id"]),
+            "requested_language": request.language,
+            "language": result.get("language", request.language),
+            "code": result.get("code", ""),
+        },
+    )
+    result["agent_plan"] = result["agent"]["steps"]
+    result["evidence_ledger"] = build_evidence_ledger(
+        facts=[
+            {
+                "value": "Статическая проверка исходника: " + str(result.get("validation", {}).get("status", "not_run")),
+                "source": str(result.get("validation", {}).get("method", "local_static_check")),
+                "confidence": 1.0 if result.get("validation", {}).get("status") == "passed" else 0.5,
+            }
+        ],
+        unknowns=["Код не запускался; runtime-поведение не подтверждено."],
+    )
     result["memory_context_turns"] = len(recent_turns)
     if session_id:
         assistant_text = result.get("summary", "Результат режима разработки.")
@@ -643,10 +677,29 @@ def generate_complete_project(
 
     result["generation_engine"] = "swin_local_templates"
     result["elapsed_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
-    result["agent_plan"] = [
-        {"name": step.name, "purpose": step.purpose, "tool": step.tool}
-        for step in plan_task(request.task, request.response_language)
-    ]
+    result["agent"] = execute_local_plan(
+        request.task,
+        language=request.response_language,
+        context={
+            "user_id": int(user["id"]),
+            "files": result.get("files", []),
+            "scope": result.get("scope", "template_only"),
+        },
+    )
+    result["agent_plan"] = result["agent"]["steps"]
+    result["evidence_ledger"] = build_evidence_ledger(
+        facts=[
+            {
+                "value": f"Создано файлов: {result['file_count']}",
+                "source": "swin_local_templates",
+                "confidence": 1.0,
+            }
+        ],
+        unknowns=[
+            "Это стартовый шаблон, не реализация всех функций из запроса.",
+            "Проект не запускался; проверка ограничена доступным статическим анализом.",
+        ],
+    )
     chat_history.save_turn(
         int(user["id"]),
         request.session_id,
@@ -718,11 +771,26 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                 "references": extra.get("references", []),
             },
         )
+        evidence_sources = list(extra.get("references", []))
+        if extra.get("source"):
+            evidence_sources.append({
+                "title": str(extra["source"]),
+                "url": "",
+                "source_type": "Локальная база SWIN",
+            })
+        evidence_ledger = build_evidence_ledger(
+            sources=evidence_sources,
+            unknowns=(
+                ["Внешний поиск отключён; текущие события не проверялись в интернете."]
+                if should_research(message) else []
+            ),
+        )
         result = {
             "answer": answer,
             "mode": mode,
             "response_language": response_language,
             "agent": agent_run,
+            "evidence_ledger": evidence_ledger,
             "memory_turns": turns,
             "generation_ms": round((time.perf_counter() - started_at) * 1000, 1),
         }
