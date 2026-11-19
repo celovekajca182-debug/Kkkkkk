@@ -654,7 +654,13 @@ class MainActivity : Activity() {
         Toast.makeText(this, confirmation, Toast.LENGTH_SHORT).show()
     }
 
-    private fun appendChatMessage(role: String, value: String, code: Boolean = false, copyText: String? = null): LinearLayout? {
+    private fun appendChatMessage(
+        role: String,
+        value: String,
+        code: Boolean = false,
+        copyText: String? = null,
+        language: String = "text"
+    ): LinearLayout? {
         if (!::chatMessages.isInitialized) return null
         val user = role == "user"
         val row = LinearLayout(this).apply {
@@ -775,7 +781,7 @@ class MainActivity : Activity() {
                     setTextColor(chatColor("accent"))
                     gravity = Gravity.END or Gravity.CENTER_VERTICAL
                     setPadding(0, chatDp(5), chatDp(2), 0)
-                    setOnClickListener { showSaveGeneratedCode(copyText, "text") }
+                    setOnClickListener { showSaveGeneratedCode(copyText, language) }
                 }
                 card.addView(saveAction, LinearLayout.LayoutParams(-1, chatDp(30)))
             }
@@ -3113,7 +3119,7 @@ class MainActivity : Activity() {
                                 val codeHeader = "\n\n" + (labels["code"] ?: "CODE") + ":\n"
                                 val summary = output.toString().substringBefore(codeHeader).trim()
                                 appendChatMessage("assistant", summary)
-                                appendChatMessage("assistant", code, true, code)
+                                appendChatMessage("assistant", code, true, code, selectedCodingLanguage)
                                 cacheLocalMessage("assistant", summary + "\n\n[SWIN_CODE_BLOCK]\n" + code, requestSessionId)
                             } else {
                                 val outputText = output.toString()
