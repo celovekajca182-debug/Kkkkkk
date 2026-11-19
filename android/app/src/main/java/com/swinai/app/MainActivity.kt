@@ -484,6 +484,9 @@ class MainActivity : Activity() {
             "assistantBubble" -> if (dark) Color.rgb(31, 37, 33) else Color.rgb(255, 254, 251)
             "userBubble" -> if (dark) Color.rgb(43, 55, 45) else Color.rgb(237, 230, 219)
             "codeBubble" -> if (dark) Color.rgb(23, 29, 25) else Color.rgb(243, 241, 235)
+            "codePill" -> if (dark) Color.rgb(48, 39, 33) else Color.rgb(245, 237, 229)
+            "composerHint" -> if (dark) Color.rgb(161, 171, 163) else Color.rgb(154, 149, 139)
+            "sendText" -> if (dark) Color.rgb(28, 34, 28) else Color.WHITE
             "assistantLabel" -> if (dark) Color.rgb(222, 165, 133) else Color.rgb(177, 105, 79)
             "userLabel" -> if (dark) Color.rgb(191, 213, 156) else Color.rgb(139, 105, 84)
             else -> chatColor("ink")
@@ -675,7 +678,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setTextColor(accent)
             setPadding(chatDp(14), 0, chatDp(14), 0)
-            background = chatBg(Color.rgb(245, 237, 229), 18)
+            background = chatBg(chatColor("codePill"), 18)
             setOnClickListener {
                 isCodeMode = !isCodeMode
                 updateCodingControls()
@@ -778,11 +781,11 @@ class MainActivity : Activity() {
             maxLines = 5
             textSize = 15f
             setTextColor(ink)
-            setHintTextColor(Color.rgb(154, 149, 139))
+            setHintTextColor(chatColor("composerHint"))
         }
         sendButton = makeButton("↑") { sendMessage() }.apply {
             textSize = 22f
-            setTextColor(Color.WHITE)
+            setTextColor(chatColor("sendText"))
             background = chatBg(accent, 15)
             minWidth = chatDp(46)
             minimumWidth = chatDp(46)
