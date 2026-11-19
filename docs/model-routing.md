@@ -68,7 +68,7 @@ When a role-specific URL and the shared `SWIN_LLM_BASE_URL` are all empty, SWIN 
 
 ## Easiest setup: Hugging Face Inference Providers
 
-The current Hugging Face model cards list Featherless AI as an Inference Provider for both selected models: Qwen3-4B-Thinking-2507 and Qwen2.5-Coder-7B-Instruct. Hugging Face exposes an OpenAI-compatible router, so SWIN can use one URL and one token while still sending the selected model ID for each role. Provider availability and price may change; re-check each model card and the account's remaining Inference Providers credits before enabling live tests.
+Hugging Face's Inference Providers router chooses a provider that currently serves each requested model and can retry another provider when one is unavailable or rate-limited. SWIN uses one OpenAI-compatible router URL and one token while sending the selected model ID for each role. Do not pin a provider unless there is a deliberate operational reason; provider availability and pricing can change. Check the model cards and account billing/credits before enabling live inference.
 
 In the Render API service environment, set:
 
