@@ -64,8 +64,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.rgb(12, 14, 24)
-        window.navigationBarColor = Color.rgb(12, 14, 24)
+        window.statusBarColor = chatColor("background")
+        window.navigationBarColor = chatColor("background")
 
         val preferences = getPreferences(MODE_PRIVATE)
         endpointValue = preferences.getString("api_base", "https://kkkkkk-02vl.onrender.com") ?: "https://kkkkkk-02vl.onrender.com"
@@ -165,8 +165,8 @@ class MainActivity : Activity() {
     private fun authFieldBackground(): GradientDrawable = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = authDp(12).toFloat()
-        setColor(Color.rgb(27, 33, 39))
-        setStroke(authDp(1), Color.rgb(55, 64, 72))
+        setColor(chatColor("panel"))
+        setStroke(authDp(1), chatColor("stroke"))
     }
 
     private fun authLabel(value: String): TextView = makeText(
@@ -196,25 +196,28 @@ class MainActivity : Activity() {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = authDp(13).toFloat()
             setColor(
-                if (primary) Color.rgb(195, 231, 111)
+                if (primary) chatColor("accent")
                 else Color.TRANSPARENT
             )
-            if (!primary) setStroke(authDp(1), Color.rgb(58, 68, 75))
+            if (!primary) setStroke(authDp(1), chatColor("stroke"))
         }
         button.setTextColor(
-            if (primary) Color.rgb(24, 30, 23)
-            else Color.rgb(206, 215, 218)
+            if (primary) chatColor("sendText")
+            else chatColor("ink")
         )
         button.stateListAnimator = null
         button.elevation = if (primary) authDp(2).toFloat() else 0f
     }
 
     private fun showAuthScreen(message: String? = null) {
-        window.statusBarColor = Color.rgb(16, 21, 24)
-        window.navigationBarColor = Color.rgb(16, 21, 24)
-
-        val backgroundColor = Color.rgb(16, 21, 24)
-        val accentColor = Color.rgb(195, 231, 111)
+        val backgroundColor = chatColor("background")
+        val accentColor = chatColor("accent")
+        val inkColor = chatColor("ink")
+        val mutedColor = chatColor("muted")
+        window.statusBarColor = backgroundColor
+        window.navigationBarColor = backgroundColor
+        window.decorView.systemUiVisibility = if (isDarkTheme()) 0 else
+            (View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -238,7 +241,7 @@ class MainActivity : Activity() {
             textSize = 24f
             typeface = Typeface.create("sans-serif", Typeface.BOLD)
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(23, 29, 22))
+            setTextColor(chatColor("sendText"))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = authDp(12).toFloat()
@@ -250,10 +253,10 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(authDp(12), 0, 0, 0)
         }
-        brandName.addView(makeText("SWIN AI", 18f, Color.WHITE).apply {
+        brandName.addView(makeText("SWIN AI", 18f, inkColor).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         })
-        brandName.addView(makeText("ЛИЧНЫЙ КАБИНЕТ", 10f, Color.rgb(130, 143, 149)).apply {
+        brandName.addView(makeText("ЛИЧНЫЙ КАБИНЕТ", 10f, mutedColor).apply {
             letterSpacing = 0.12f
         })
         brandRow.addView(brandName, LinearLayout.LayoutParams(
@@ -275,7 +278,7 @@ class MainActivity : Activity() {
         content.addView(makeText(
             if (isRegisterMode) "Создайте аккаунт" else "Войдите в SWIN AI",
             29f,
-            Color.rgb(244, 247, 245)
+            inkColor
         ).apply {
             typeface = Typeface.create("sans-serif", Typeface.BOLD)
         })
@@ -286,7 +289,7 @@ class MainActivity : Activity() {
             else
                 "Введите данные, чтобы продолжить работу.",
             14f,
-            Color.rgb(151, 163, 168)
+            mutedColor
         ))
         addGap(content, 30)
 
@@ -361,7 +364,7 @@ class MainActivity : Activity() {
             content.addView(makeText(
                 "Используйте не менее 12 символов.",
                 12f,
-                Color.rgb(130, 143, 149)
+                mutedColor
             ))
         }
 
@@ -372,8 +375,8 @@ class MainActivity : Activity() {
             else
                 "Ваши данные передаются по защищённому соединению.",
             12f,
-            if (message.isNullOrBlank()) Color.rgb(130, 143, 149)
-            else Color.rgb(235, 177, 135)
+            if (message.isNullOrBlank()) mutedColor
+            else chatColor("danger")
         )
         content.addView(authStatus)
         addGap(content, 12)
@@ -409,7 +412,7 @@ class MainActivity : Activity() {
         serverHeader.addView(makeText(
             "Настройки подключения",
             13f,
-            Color.rgb(174, 185, 190)
+            mutedColor
         ), LinearLayout.LayoutParams(0, authDp(38), 1f))
         val serverToggle = TextView(this).apply {
             text = "Изменить"
@@ -1387,7 +1390,14 @@ class MainActivity : Activity() {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, langs)
         }
         projectContextInput = makeEdit("Код или структура проекта (необязательно)",
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE, false).apply { maxLines = 3 }
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE, false).apply {
+            maxLines = 3
+            textSize = 13f
+            setTextColor(ink)
+            setHintTextColor(muted)
+            background = chatBg(chatColor("panel"), 12, chatColor("stroke"))
+            setPadding(chatDp(12), chatDp(9), chatDp(12), chatDp(9))
+        }
         activitySwitch = Switch(this).apply {
             text = "Показывать этапы проверки"
             setTextColor(muted)
