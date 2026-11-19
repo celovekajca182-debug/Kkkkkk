@@ -553,6 +553,12 @@ class MainActivity : Activity() {
             "userLabel" -> if (dark) Color.rgb(188, 217, 169) else Color.rgb(83, 126, 88)
             "success" -> if (dark) Color.rgb(166, 215, 137) else Color.rgb(61, 129, 78)
             "danger" -> if (dark) Color.rgb(235, 135, 126) else Color.rgb(190, 67, 61)
+            "syntaxKeyword" -> if (dark) Color.rgb(196, 167, 255) else Color.rgb(112, 75, 174)
+            "syntaxString" -> if (dark) Color.rgb(174, 215, 145) else Color.rgb(48, 125, 75)
+            "syntaxComment" -> if (dark) Color.rgb(132, 147, 137) else Color.rgb(126, 137, 128)
+            "syntaxNumber" -> if (dark) Color.rgb(242, 190, 130) else Color.rgb(168, 96, 40)
+            "syntaxFunction" -> if (dark) Color.rgb(133, 194, 232) else Color.rgb(38, 111, 156)
+            "syntaxTag" -> if (dark) Color.rgb(229, 160, 178) else Color.rgb(157, 66, 101)
             else -> chatColor("ink")
         }
     }
@@ -921,10 +927,556 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun workspaceStore(): WorkspaceStore? {
+        if (userEmail.isBlank()) {
+            Toast.makeText(this, "Сначала войди в аккаунт.", Toast.LENGTH_SHORT).show()
+            return null
+        }
+        return try {
+            WorkspaceStore(this, userEmail)
+        } catch (error: Exception) {
+            Toast.makeText(this, error.message ?: "Хранилище недоступно.", Toast.LENGTH_LONG).show()
+            null
+        }
+    }
+
+    private fun showWorkspace() {
+        val store = workspaceStore() ?: return
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(16), chatDp(8), chatDp(16), chatDp(8))
+        }
+        root.addView(makeText(
+            "Локальные проекты и файлы. Исходники шифруются ключом Android Keystore и доступны только этому аккаунту на этом телефоне.",
+            12f,
+            chatColor("muted")
+        ).apply { setLineSpacing(chatDp(2).toFloat(), 1f) })
+        val create = TextView(this).apply {
+            text = "＋  Создать проект"
+            gravity = Gravity.CENTER
+            textSize = 14f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(chatColor("sendText"))
+            background = chatBg(chatColor("accent"), 12)
+        }
+        root.addView(create, LinearLayout.LayoutParams(-1, chatDp(46)).apply {
+            topMargin = chatDp(12)
+        })
+        val search = makeEdit("Найти проект…", InputType.TYPE_CLASS_TEXT).apply {
+            background = chatBg(chatColor("panel"), 11, chatColor("stroke"))
+            setTextColor(chatColor("ink"))
+            setHintTextColor(chatColor("muted"))
+            setPadding(chatDp(12), chatDp(6), chatDp(12), chatDp(6))
+            textSize = 14f
+        }
+        root.addView(search, LinearLayout.LayoutParams(-1, chatDp(46)).apply {
+            topMargin = chatDp(8)
+        })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(list, ViewGroup.LayoutParams(-1, -2))
+        }
+        root.addView(scroll, LinearLayout.LayoutParams(-1, chatDp(340)).apply {
+            topMargin = chatDp(8)
+        })
+        val dialog = dialogBuilder().setTitle("Рабочее пространство")
+            .setView(root).setNegativeButton("Закрыть", null).create()
+        dialog.show()
+
+        fun renderProjects(queryText: String) {
+            list.removeAllViews()
+            val query = queryText.trim().lowercase()
+            val projects = try {
+                store.projects().filter { it.optString("name").lowercase().contains(query) }
+            } catch (error: Exception) {
+                Toast.makeText(this, error.message ?: "Ошибка хранилища.", Toast.LENGTH_LONG).show()
+                emptyList()
+            }
+            if (projects.isEmpty()) {
+                list.addView(makeText(
+                    if (query.isBlank()) "Пока нет проектов. Создай первый проект и добавь файлы."
+                    else "Проекты не найдены.",
+                    13f,
+                    chatColor("muted")
+                ).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(chatDp(14), chatDp(28), chatDp(14), chatDp(28))
+                })
+                return
+            }
+            for (project in projects) {
+                val projectId = project.optString("id")
+                val files = project.optJSONArray("files")?.length() ?: 0
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(chatDp(14), chatDp(12), chatDp(14), chatDp(12))
+                    background = chatBg(chatColor("panel"), 13, chatColor("stroke"))
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        dialog.dismiss()
+                        showProjectFiles(projectId)
+                    }
+                    setOnLongClickListener {
+                        dialogBuilder().setTitle("Удалить проект?")
+                            .setMessage("Проект «${project.optString("name")}» и все его файлы будут удалены с этого телефона.")
+                            .setNegativeButton("Отмена", null)
+                            .setPositiveButton("Удалить") { _, _ ->
+                                try {
+                                    store.deleteProject(projectId)
+                                    renderProjects(search.text.toString())
+                                } catch (error: Exception) {
+                                    Toast.makeText(this@MainActivity, error.message, Toast.LENGTH_LONG).show()
+                                }
+                            }.show()
+                        true
+                    }
+                }
+                row.addView(makeText(project.optString("name"), 15f, chatColor("ink")).apply {
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                })
+                row.addView(makeText(
+                    "$files файлов  ·  удержи, чтобы удалить",
+                    11f,
+                    chatColor("muted")
+                ).apply { setPadding(0, chatDp(4), 0, 0) })
+                list.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+                    bottomMargin = chatDp(8)
+                })
+            }
+        }
+
+        create.setOnClickListener {
+            dialog.dismiss()
+            showCreateWorkspaceProject()
+        }
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                renderProjects(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
+        })
+        renderProjects("")
+    }
+
+    private fun showCreateWorkspaceProject() {
+        val input = makeEdit("Например, MyGame", InputType.TYPE_CLASS_TEXT).apply {
+            background = chatBg(chatColor("panel"), 11, chatColor("stroke"))
+            setTextColor(chatColor("ink"))
+            setHintTextColor(chatColor("muted"))
+            setPadding(chatDp(12), chatDp(8), chatDp(12), chatDp(8))
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(20), chatDp(8), chatDp(20), 0)
+            addView(input, LinearLayout.LayoutParams(-1, chatDp(50)))
+        }
+        val dialog = dialogBuilder().setTitle("Новый проект")
+            .setView(box)
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Создать", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                try {
+                    val project = workspaceStore()?.createProject(input.text.toString()) ?: return@setOnClickListener
+                    dialog.dismiss()
+                    showProjectFiles(project.optString("id"))
+                } catch (error: Exception) {
+                    input.error = error.message ?: "Не удалось создать проект."
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showProjectFiles(projectId: String) {
+        val store = workspaceStore() ?: return
+        val project = try {
+            store.project(projectId)
+        } catch (error: Exception) {
+            Toast.makeText(this, error.message, Toast.LENGTH_LONG).show()
+            null
+        } ?: run {
+            Toast.makeText(this, "Проект не найден.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(16), chatDp(8), chatDp(16), chatDp(8))
+        }
+        root.addView(makeText(
+            "Файлы проекта «${project.optString("name")}»",
+            13f,
+            chatColor("muted")
+        ))
+        val create = TextView(this).apply {
+            text = "＋  Новый файл"
+            gravity = Gravity.CENTER
+            textSize = 14f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(chatColor("sendText"))
+            background = chatBg(chatColor("accent"), 12)
+        }
+        root.addView(create, LinearLayout.LayoutParams(-1, chatDp(44)).apply {
+            topMargin = chatDp(10)
+        })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(list, ViewGroup.LayoutParams(-1, -2))
+        }
+        root.addView(scroll, LinearLayout.LayoutParams(-1, chatDp(360)).apply {
+            topMargin = chatDp(8)
+        })
+        val dialog = dialogBuilder().setTitle("Файлы проекта")
+            .setView(root).setNegativeButton("Назад", null).create()
+        dialog.show()
+
+        val files = project.optJSONArray("files") ?: JSONArray()
+        if (files.length() == 0) {
+            list.addView(makeText("Файлов пока нет. Создай первый файл, например main.gd или main.py.", 13f, chatColor("muted")).apply {
+                gravity = Gravity.CENTER
+                setPadding(chatDp(14), chatDp(28), chatDp(14), chatDp(28))
+            })
+        } else {
+            val sorted = (0 until files.length()).mapNotNull { files.optJSONObject(it) }
+                .sortedByDescending { it.optLong("updated_at", 0L) }
+            for (file in sorted) {
+                val fileId = file.optString("id")
+                val name = file.optString("name")
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(chatDp(13), chatDp(11), chatDp(13), chatDp(11))
+                    background = chatBg(chatColor("panel"), 12, chatColor("stroke"))
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        dialog.dismiss()
+                        showWorkspaceEditor(projectId, file)
+                    }
+                    setOnLongClickListener {
+                        dialogBuilder().setTitle("Удалить файл?")
+                            .setMessage("Файл «$name» будет удалён из проекта.")
+                            .setNegativeButton("Отмена", null)
+                            .setPositiveButton("Удалить") { _, _ ->
+                                try {
+                                    store.deleteFile(projectId, fileId)
+                                    showProjectFiles(projectId)
+                                } catch (error: Exception) {
+                                    Toast.makeText(this@MainActivity, error.message, Toast.LENGTH_LONG).show()
+                                }
+                            }.show()
+                        true
+                    }
+                }
+                row.addView(makeText(name, 14f, chatColor("ink")).apply {
+                    typeface = Typeface.create("monospace", Typeface.BOLD)
+                })
+                row.addView(makeText(
+                    file.optString("language", "text").uppercase() +
+                        "  ·  ${file.optString("content").length} символов  ·  удержи, чтобы удалить",
+                    10f,
+                    chatColor("muted")
+                ).apply { setPadding(0, chatDp(4), 0, 0) })
+                list.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+                    bottomMargin = chatDp(7)
+                })
+            }
+        }
+        create.setOnClickListener {
+            dialog.dismiss()
+            showCreateWorkspaceFile(projectId)
+        }
+    }
+
+    private fun workspaceLanguages(): List<Pair<String, String>> = listOf(
+        "Godot 4 / GDScript" to "gdscript",
+        "Python" to "python",
+        "Kotlin" to "kotlin",
+        "Java" to "java",
+        "JavaScript" to "javascript",
+        "TypeScript" to "typescript",
+        "JSON" to "json",
+        "HTML" to "html",
+        "CSS" to "css",
+        "XML" to "xml",
+        "SQL" to "sql",
+        "C / C++" to "cpp",
+        "C#" to "csharp",
+        "Go" to "go",
+        "Rust" to "rust",
+        "Shell" to "bash",
+        "Текст" to "text"
+    )
+
+    private fun guessWorkspaceLanguage(fileName: String): String {
+        return when (fileName.substringAfterLast('.', "").lowercase()) {
+            "gd" -> "gdscript"
+            "py" -> "python"
+            "kt", "kts" -> "kotlin"
+            "java" -> "java"
+            "js", "mjs", "cjs" -> "javascript"
+            "ts", "tsx" -> "typescript"
+            "json" -> "json"
+            "html", "htm" -> "html"
+            "css", "scss" -> "css"
+            "xml", "svg" -> "xml"
+            "sql" -> "sql"
+            "c", "h", "cpp", "cc", "hpp" -> "cpp"
+            "cs" -> "csharp"
+            "go" -> "go"
+            "rs" -> "rust"
+            "sh", "bash" -> "bash"
+            else -> "text"
+        }
+    }
+
+    private fun showCreateWorkspaceFile(projectId: String) {
+        val store = workspaceStore() ?: return
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(20), chatDp(8), chatDp(20), 0)
+        }
+        val nameInput = makeEdit("Например, main.gd", InputType.TYPE_CLASS_TEXT).apply {
+            background = chatBg(chatColor("panel"), 11, chatColor("stroke"))
+            setTextColor(chatColor("ink"))
+            setHintTextColor(chatColor("muted"))
+            setPadding(chatDp(12), chatDp(8), chatDp(12), chatDp(8))
+        }
+        box.addView(nameInput, LinearLayout.LayoutParams(-1, chatDp(50)))
+        val options = workspaceLanguages()
+        val languageSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_item,
+                options.map { it.first }
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            setSelection(0)
+            background = chatBg(chatColor("panel"), 10, chatColor("stroke"))
+        }
+        box.addView(languageSpinner, LinearLayout.LayoutParams(-1, chatDp(48)).apply {
+            topMargin = chatDp(10)
+        })
+        nameInput.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val guessed = guessWorkspaceLanguage(s?.toString().orEmpty())
+                val index = options.indexOfFirst { it.second == guessed }
+                if (index >= 0) languageSpinner.setSelection(index)
+            }
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
+        })
+        val dialog = dialogBuilder().setTitle("Новый файл")
+            .setView(box)
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Создать", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                try {
+                    val language = options.getOrNull(languageSpinner.selectedItemPosition)?.second ?: "text"
+                    val file = store.createFile(projectId, nameInput.text.toString(), language)
+                    dialog.dismiss()
+                    showWorkspaceEditor(projectId, file)
+                } catch (error: Exception) {
+                    nameInput.error = error.message ?: "Не удалось создать файл."
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showWorkspaceEditor(projectId: String, file: JSONObject) {
+        val store = workspaceStore() ?: return
+        val fileId = file.optString("id")
+        var dirty = false
+        var currentName = file.optString("name")
+        var currentLanguage = file.optString("language", "text")
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(12), chatDp(8), chatDp(12), chatDp(8))
+        }
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val filenameInput = makeEdit("Имя файла", InputType.TYPE_CLASS_TEXT).apply {
+            setText(currentName)
+            background = chatBg(chatColor("panel"), 10, chatColor("stroke"))
+            setTextColor(chatColor("ink"))
+            setHintTextColor(chatColor("muted"))
+            setPadding(chatDp(10), chatDp(4), chatDp(10), chatDp(4))
+            textSize = 13f
+        }
+        top.addView(filenameInput, LinearLayout.LayoutParams(0, chatDp(46), 1f))
+        val options = workspaceLanguages()
+        val languageSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_item,
+                options.map { it.first }
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            setSelection(options.indexOfFirst { it.second == currentLanguage }.coerceAtLeast(0))
+            background = chatBg(chatColor("panel"), 10, chatColor("stroke"))
+        }
+        top.addView(languageSpinner, LinearLayout.LayoutParams(chatDp(142), chatDp(46)).apply {
+            marginStart = chatDp(7)
+        })
+        root.addView(top)
+
+        val editorRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = chatBg(chatColor("codeBubble"), 11, chatColor("stroke"))
+        }
+        val lineNumbers = makeText("1", 12f, chatColor("muted")).apply {
+            typeface = Typeface.create("monospace", Typeface.NORMAL)
+            gravity = Gravity.TOP or Gravity.END
+            setPadding(chatDp(7), chatDp(12), chatDp(8), chatDp(12))
+            setLineSpacing(chatDp(3).toFloat(), 1f)
+        }
+        editorRow.addView(lineNumbers, LinearLayout.LayoutParams(chatDp(38), -1))
+        val editor = EditText(this).apply {
+            setText(file.optString("content", ""))
+            textSize = 13f
+            typeface = Typeface.create("monospace", Typeface.NORMAL)
+            setTextColor(chatColor("ink"))
+            setHintTextColor(chatColor("muted"))
+            hint = "// Начни писать код…"
+            gravity = Gravity.TOP or Gravity.START
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            isHorizontallyScrolling = true
+            isVerticalScrollBarEnabled = false
+            setPadding(chatDp(9), chatDp(12), chatDp(12), chatDp(12))
+            background = ColorDrawable(Color.TRANSPARENT)
+            minLines = 18
+            maxLines = 600
+            setLineSpacing(chatDp(3).toFloat(), 1f)
+        }
+        editorRow.addView(editor, LinearLayout.LayoutParams(0, -2, 1f))
+        val codeScroll = ScrollView(this).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+            addView(editorRow, ViewGroup.LayoutParams(-1, -2))
+        }
+        root.addView(codeScroll, LinearLayout.LayoutParams(-1, 0, 1f).apply {
+            topMargin = chatDp(9)
+        })
+        val status = makeText("", 11f, chatColor("muted")).apply {
+            setPadding(chatDp(3), chatDp(6), chatDp(3), chatDp(2))
+        }
+        root.addView(status)
+
+        fun refreshEditorDecorations(text: CharSequence) {
+            val lines = text.count { it == '\n' } + 1
+            lineNumbers.text = (1..lines).joinToString("\n")
+            status.text = "$lines строк  ·  ${text.length} символов" +
+                if (dirty) "  ·  не сохранено" else "  ·  сохранено"
+        }
+        fun selectedLanguage(): String =
+            options.getOrNull(languageSpinner.selectedItemPosition)?.second ?: currentLanguage
+        fun saveCurrentFile(): Boolean {
+            return try {
+                val newName = filenameInput.text.toString()
+                val newLanguage = selectedLanguage()
+                val newContent = editor.text.toString()
+                store.saveFile(projectId, fileId, newName, newLanguage, newContent)
+                currentName = newName
+                currentLanguage = newLanguage
+                file.put("name", newName).put("language", newLanguage)
+                    .put("content", newContent)
+                dirty = false
+                refreshEditorDecorations(editor.text)
+                true
+            } catch (error: Exception) {
+                filenameInput.error = error.message ?: "Не удалось сохранить файл."
+                false
+            }
+        }
+        editor.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                dirty = true
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {
+                if (s != null) {
+                    CodeSyntaxHighlighter.apply(s, selectedLanguage(), ::chatColor)
+                    refreshEditorDecorations(s)
+                }
+            }
+        })
+        languageSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(
+                parent: android.widget.AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                editor.text?.let { CodeSyntaxHighlighter.apply(it, selectedLanguage(), ::chatColor) }
+                if (currentLanguage != selectedLanguage()) dirty = true
+                refreshEditorDecorations(editor.text)
+            }
+        }
+        refreshEditorDecorations(editor.text)
+        CodeSyntaxHighlighter.apply(editor.text, currentLanguage, ::chatColor)
+
+        val dialog = dialogBuilder()
+            .setTitle("Редактор кода")
+            .setView(root)
+            .setNegativeButton("Закрыть", null)
+            .setPositiveButton("Сохранить", null)
+            .setNeutralButton("Передать SWIN", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setLayout(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (saveCurrentFile()) {
+                    Toast.makeText(this, "Файл сохранён", Toast.LENGTH_SHORT).show()
+                }
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                if (!saveCurrentFile()) return@setOnClickListener
+                val source = editor.text.toString()
+                val contextText = "Проект: ${store.project(projectId)?.optString("name") ?: ""}\n" +
+                    "Файл: $currentName\nЯзык: $currentLanguage\n\n" + source
+                if (::projectContextInput.isInitialized) {
+                    projectContextInput.setText(contextText.take(4000))
+                }
+                isCodeMode = true
+                updateCodingControls()
+                codeModeHeader?.text = "Код ✓"
+                dialog.dismiss()
+                focusComposer("Проверь файл $currentName. Найди ошибки, объясни их и предложи исправления.", coding = true)
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                if (dirty) {
+                    dialogBuilder().setTitle("Есть несохранённые изменения")
+                        .setMessage("Сохранить изменения перед закрытием редактора?")
+                        .setNegativeButton("Без сохранения") { _, _ -> dialog.dismiss() }
+                        .setPositiveButton("Сохранить") { _, _ ->
+                            if (saveCurrentFile()) dialog.dismiss()
+                        }.show()
+                } else {
+                    dialog.dismiss()
+                }
+            }
+        }
+        dialog.show()
+    }
+
     private fun showChatSettings() {
         val options = arrayOf(
             "История чатов",
             "Новый чат",
+            "Рабочее пространство",
             "Память SWIN",
             "Язык ответа",
             "Оформление",
@@ -938,12 +1490,13 @@ class MainActivity : Activity() {
                 when (which) {
                     0 -> showChatHistory()
                     1 -> createNewChat()
-                    2 -> showMemorySettings()
-                    3 -> showResponseLanguageSettings()
-                    4 -> showThemeSettings()
-                    5 -> showEndpointSettings()
-                    6 -> confirmClearChatMemory()
-                    7 -> logout()
+                    2 -> showWorkspace()
+                    3 -> showMemorySettings()
+                    4 -> showResponseLanguageSettings()
+                    5 -> showThemeSettings()
+                    6 -> showEndpointSettings()
+                    7 -> confirmClearChatMemory()
+                    8 -> logout()
                 }
             }
             .setNegativeButton("Закрыть", null)
@@ -1642,6 +2195,18 @@ class MainActivity : Activity() {
             11f,
             muted
         ).apply { setPadding(chatDp(3), 0, 0, chatDp(7)) })
+        val workspaceButton = TextView(this).apply {
+            text = "▣  Открыть рабочее пространство"
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(chatColor("accent"))
+            background = chatBg(chatColor("codePill"), 10, chatColor("stroke"))
+            setPadding(chatDp(10), 0, chatDp(10), 0)
+            setOnClickListener { showWorkspace() }
+        }
+        codingPanel.addView(workspaceButton, LinearLayout.LayoutParams(-1, chatDp(38)).apply {
+            bottomMargin = chatDp(6)
+        })
         codingPanel.addView(languageSpinner, LinearLayout.LayoutParams(-1, chatDp(44)))
         codingPanel.addView(projectContextInput, LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = chatDp(5)
@@ -1680,17 +2245,18 @@ class MainActivity : Activity() {
             setOnClickListener {
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle("Дополнительные действия")
-                    .setItems(arrayOf("История чатов", "Новый чат", "Режим программирования", "Память SWIN", "Язык ответа")) { _, which ->
+                    .setItems(arrayOf("История чатов", "Новый чат", "Рабочее пространство", "Режим программирования", "Память SWIN", "Язык ответа")) { _, which ->
                         when (which) {
                             0 -> showChatHistory()
                             1 -> createNewChat()
-                            2 -> {
+                            2 -> showWorkspace()
+                            3 -> {
                                 isCodeMode = !isCodeMode
                                 updateCodingControls()
                                 codeMode.text = if (isCodeMode) "Код ✓" else "Код"
                             }
-                            3 -> showMemorySettings()
-                            4 -> showResponseLanguageSettings()
+                            4 -> showMemorySettings()
+                            5 -> showResponseLanguageSettings()
                         }
                     }
                     .show()
