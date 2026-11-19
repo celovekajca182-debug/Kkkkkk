@@ -511,7 +511,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                 max_new_tokens=160,
                 temperature=0.0,
                 top_k=1,
-                stop_at_newline=True,
+                stop_at_newline=False,
             ).strip()
             generated_answer = generated_answer.split("\nПользователь:", 1)[0].strip()
             generation_valid = bool(generated_answer) and not looks_like_garbage(generated_answer)
