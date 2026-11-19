@@ -2,15 +2,15 @@
 
 Собственная экспериментальная языковая модель и Android-клиент. SWIN не обращается к ChatGPT, DeepSeek или платным AI API. Веса базовой модели создаются собственным циклом обучения с нуля.
 
-## Архитектура 0.4
+## Архитектура SWIN 0.7
 
-- **ByteTokenizer** — переводит текст в UTF-8 байты (256 возможных токенов), поддерживает русский и Unicode без отдельного словаря.
+- **Unicode CharTokenizer** — русские буквы и символы кода представлены отдельными токенами; словарь сохраняется внутри checkpoint. Для старых checkpoint сохранена совместимость с UTF-8 ByteTokenizer.
 - **SWINTransformer** — небольшой decoder-only Transformer с causal self-attention, позиционными embedding, feed-forward блоками и собственной матрицей весов.
 - **Двухэтапное обучение** — сначала pretraining на русскоязычных документах, затем instruction tuning на вопросах и ответах.
-- **Открытые данные** — ограниченная выборка FineWeb2-HQ \`rus_Cyrl\` и проверенные русские пары из OpenAssistant OASST1.
+- **Открытые данные** — FineWeb2-HQ для русского веб-текста, FineWiki для русской Wikipedia, OASST1 для проверенных диалогов и MBPP для Python-задач.
 - **Фильтры данных** — проверка языка, доли кириллицы, повторов, review-флагов и некоторых нежелательных меток; маскирование очевидных email, IPv4 и телефоноподобных строк.
 - **KnowledgeBase** — локальный поиск по проверенным материалам. Для известных технических вопросов retrieval остаётся приоритетнее свободной генерации.
-- **Conversation memory** — сервер хранит до 6 пар сообщений на session_id и до 256 активных сессий в RAM; история очищается при перезапуске сервера.
+- **Conversation memory** — история аккаунта сохраняется в PostgreSQL на хостинге или в локальном SQLite; короткий контекст сессии также используется в режиме программирования.
 - **Android** — хранит уникальный session_id на телефоне, передаёт его API и продолжает поддерживать ограниченные офлайн-ответы.
 
 ## Что изучено в открытых моделях
@@ -42,26 +42,35 @@ pip install datasets==3.3.2
 
 Из каталога \`server\`:
 \`\`\`bash
-python prepare_corpus.py --web-documents 1200 --web-max-chars 600000 --oasst-max-pairs 1500
-python train_transformer.py --pretrain-epochs 10 --sft-epochs 4 --block-size 256
+python prepare_corpus.py \
+  --web-documents 2500 --web-max-chars 1500000 \
+  --wiki-documents 1500 --wiki-max-chars 900000 \
+  --oasst-max-pairs 3500
+python prepare_coding_data.py --max-train 700 --max-validation 160
+python train_transformer.py --pretrain-epochs 2 --sft-epochs 2 --block-size 512
 \`\`\`
 
-Подготовка данных читает FineWeb2-HQ в streaming-режиме с ограничением объёма, затем загружает OASST1 и отбирает русские проверенные пары. Полный FineWeb2-HQ (около 1,2 TB только для русской конфигурации) не скачивается.
+Подготовка данных потоково читает FineWeb2-HQ — отобранный русский веб-текст, FineWiki — статьи русской Wikipedia, OASST1 — проверенные диалоги. MBPP отдельно добавляет задачи по Python. Полные архивы (FineWeb2-HQ около 1,2 TB и FineWiki около 10,7 GB для русских конфигураций) не скачиваются целиком.
 
 Скрипт создаёт:
 - \`data/fineweb2_ru_train.txt\` и \`data/fineweb2_ru_validation.txt\`;
+- \`data/finewiki_ru_train.txt\` и \`data/finewiki_ru_validation.txt\`;
 - \`data/openassistant_ru_train.jsonl\` и \`data/openassistant_ru_validation.jsonl\`;
-- \`data/dataset_manifest.json\` с количеством реально отобранных документов и диалогов.
+- \`data/mbpp_python_train.jsonl\` и \`data/mbpp_python_validation.jsonl\`;
+- \`data/dataset_manifest.json\` и \`data/mbpp_manifest.json\` с источниками, лицензиями и количеством отобранных примеров.
 
 Затем обучение выполняется в два этапа:
-1. **Pretraining** — обучение предсказанию следующего байта на русском веб-корпусе.
-2. **Instruction tuning** — продолжение обучения на вопросах и ответах из OASST1 и нашей локальной базы.
+1. **Pretraining** — предсказание следующего Unicode-символа на смешанном корпусе FineWeb2-HQ + FineWiki + базовый текст.
+2. **Instruction tuning** — обучение на вопросах и ответах из OASST1, локальной базы SWIN и программных задач MBPP.
+
+FineWeb2, FineWiki и OASST1 имеют отдельные validation-части, которые не используются для обновления весов. Условия лицензий и атрибуция: [server/data/DATASET_SOURCES.md](server/data/DATASET_SOURCES.md).
 
 Артефакты:
-- \`models/swin-transformer-pretrain.pt\` — веса после первого этапа;
-- \`models/swin-transformer.pt\` — финальные веса после instruction tuning.
+- \`models/swin-transformer-pretrain.pt\` — checkpoint после этапа предобучения;
+- \`models/swin-transformer.pt\` — финальный checkpoint после instruction tuning;
+- \`data/dataset_manifest.json\` — фактический состав и лицензии выборки.
 
-GitHub Actions запускает ту же последовательность автоматически после изменений обучающего кода или исходных данных. Готовые веса и manifest доступны в Artifacts workflow **Train SWIN Transformer**.
+GitHub Actions запускает ту же последовательность автоматически после изменений обучающего кода или исходных данных. Готовые веса и manifest публикуются в Artifacts workflow **Train SWIN Transformer**.
 
 ## Регистрация и вход
 
@@ -108,8 +117,8 @@ Workflow **Build SWIN AI APK** собирает debug APK. Открой GitHub �
 
 ## Текущие ограничения
 
-Это небольшая учебная модель, а не большая LLM. ByteTokenizer неэффективен для русского текста, контекст ограничен 256 байтами, а выборка данных намеренно мала, чтобы обучение помещалось в GitHub Actions. Regex-маскирование не гарантирует удаления абсолютно всех персональных данных из веб-корпуса. Снижение validation loss само по себе не доказывает фактическую правильность ответов — для этого нужен отдельный фиксированный benchmark.
+Это небольшая экспериментальная модель, а не большая LLM. Текущий CharTokenizer эффективнее старого ByteTokenizer для кириллицы, но остаётся символьным, а не субсловным BPE. Выборки намеренно ограничены, поскольку обучение запускается на CPU в GitHub Actions. Regex-маскирование не гарантирует удаления абсолютно всех персональных данных из веб-корпуса. Снижение validation loss само по себе не доказывает фактическую правильность ответов — для этого нужен фиксированный benchmark и человеческая оценка.
 
-Следующие инженерные шаги: обучаемый BPE/SentencePiece токенизатор, более длинный контекст, отдельный набор задач для автоматической оценки, больше проверенных русскоязычных инструкций и перенос длительного обучения на GPU.
+Следующие инженерные шаги: BPE/SentencePiece, preference tuning (DPO/RLHF) на корректно лицензированных предпочтениях, многоязычный корпус, расширение тестов по математике и коду, а затем длительное обучение на GPU.
 
 SWIN AI может помогать с программированием, отладкой, своими играми, офлайн-моддингом и разрешёнными модификациями. Для собственной игры поддерживаются debug-инструменты, тестовые режимы и офлайн-трейнеры; обход античита и вмешательство в чужие онлайн-матчи не входят в проект.
