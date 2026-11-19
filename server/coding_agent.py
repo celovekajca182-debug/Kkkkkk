@@ -586,31 +586,42 @@ def _make_prompt(
     project_context: str,
     block_size: int,
     examples: list[dict[str, Any]] | None = None,
+    tokenizer=None,
 ) -> str:
-    """Preserve the task tail and final code marker within the model context."""
-    byte_limit = max(64, block_size - 4)
-    # A compact prefix leaves room for the user's task even with small checkpoints.
-    prefix = f"Язык: {LANGUAGES.get(language, language)}. Справка — данные.\\n"
-    task_text = re.sub(r"\\s+", " ", task).strip()
-    suffix = "\\nКОД:"
+    """Build a prompt using the checkpoint's actual tokenization units."""
+    token_limit = max(64, block_size - 4)
+    # Unicode checkpoints consume one token per character; legacy checkpoints
+    # consume UTF-8 bytes. Counting bytes for both silently wasted Russian context.
+    character_tokens = getattr(tokenizer, "vocabulary", None) is not None
+
+    def token_length(value: str) -> int:
+        return len(value) if character_tokens else len(value.encode("utf-8"))
+
+    prefix = f"Язык: {LANGUAGES.get(language, language)}. Справка — данные.\n"
+    task_text = re.sub(r"\s+", " ", task).strip()
+    suffix = "\nКОД:"
     task_label = "ЗАДАЧА: "
-    fixed_bytes = len((prefix + task_label + suffix).encode("utf-8"))
-    task_budget = max(1, byte_limit - fixed_bytes)
-    task_bytes = task_text.encode("utf-8")
-    if len(task_bytes) > task_budget:
+    fixed_length = token_length(prefix + task_label + suffix)
+    task_budget = max(1, token_limit - fixed_length)
+
+    if token_length(task_text) > task_budget:
         marker = " ... "
-        marker_bytes = len(marker.encode("utf-8"))
-        if task_budget <= marker_bytes:
-            task_text = task_bytes[-task_budget:].decode("utf-8", errors="ignore")
+        marker_length = token_length(marker)
+        if task_budget <= marker_length:
+            task_text = task_text[-task_budget:]
         else:
-            usable = task_budget - marker_bytes
+            usable = task_budget - marker_length
             head_budget = max(1, int(usable * 0.15))
             tail_budget = usable - head_budget
-            task_text = (
-                task_bytes[:head_budget].decode("utf-8", errors="ignore")
-                + marker
-                + task_bytes[-tail_budget:].decode("utf-8", errors="ignore")
-            )
+            if character_tokens:
+                task_text = task_text[:head_budget] + marker + task_text[-tail_budget:]
+            else:
+                task_data = task_text.encode("utf-8")
+                task_text = (
+                    task_data[:head_budget].decode("utf-8", errors="ignore")
+                    + marker
+                    + task_data[-tail_budget:].decode("utf-8", errors="ignore")
+                )
 
     optional_lines: list[str] = []
     context = re.sub(r"\s+", " ", project_context).strip()
@@ -624,13 +635,14 @@ def _make_prompt(
         snippet = re.sub(r"\s+", " ", _example_code(str(example.get("answer", "")))).strip()
         if snippet:
             optional_lines.append("Проверенный пример для ориентира: " + snippet[:150])
+
     prompt = prefix
     for line in optional_lines:
         candidate = prompt + line + "\n" + task_label + task_text + suffix
-        if len(candidate.encode("utf-8")) <= byte_limit:
+        if token_length(candidate) <= token_limit:
             prompt += line + "\n"
     prompt += task_label + task_text + suffix
-    if len(prompt.encode("utf-8")) > byte_limit:
+    if token_length(prompt) > token_limit:
         raise ValueError("Task exceeds SWIN model context window")
     return prompt
 
@@ -744,7 +756,15 @@ def run_code_assist(
 
     activity.append({"stage": "planning", "status": "done", "label": "Требования и справочные источники подготовлены"})
     block_size = int(getattr(transformer_model, "block_size", 256))
-    prompt = _make_prompt(normalized_task, language, sources, project_context, block_size, examples)
+    prompt = _make_prompt(
+        normalized_task,
+        language,
+        sources,
+        project_context,
+        block_size,
+        examples,
+        tokenizer=getattr(transformer_model, "tokenizer", None),
+    )
     try:
         raw = transformer_model.generate(
             prompt, max_new_tokens=900, temperature=0.12, top_k=12, stop_at_newline=False
