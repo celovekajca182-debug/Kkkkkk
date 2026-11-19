@@ -50,6 +50,7 @@ class MainActivity : Activity() {
     private lateinit var copyCodeButton: Button
     private var welcomePanel: View? = null
     private var codeModeHeader: TextView? = null
+    private var memoryDialog: AlertDialog? = null
 
     private var lastGeneratedCode: String = ""
     private var isRegisterMode = false
@@ -981,6 +982,10 @@ class MainActivity : Activity() {
             .setPositiveButton("Готово", null)
             .setNeutralButton("＋ Добавить факт", null)
             .create()
+        memoryDialog = dialog
+        dialog.setOnDismissListener {
+            if (memoryDialog === dialog) memoryDialog = null
+        }
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(chatColor("accent"))
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(chatColor("accent"))
@@ -1061,6 +1066,8 @@ class MainActivity : Activity() {
     private fun deleteMemoryFact(memoryKey: String) {
         val token = authToken ?: return
         if (memoryKey.isBlank()) return
+        memoryDialog?.dismiss()
+        memoryDialog = null
         thread {
             try {
                 val encoded = URLEncoder.encode(memoryKey, "UTF-8")
