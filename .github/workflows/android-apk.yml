@@ -65,7 +65,7 @@ jobs:
           body: |
             SWIN AI Android build v0.10.0.
 
-            Updated native chat UI, searchable multi-conversation history, account memory manager, quick actions and clickable source links.
+            Added encrypted local coding workspace, project/file management, line numbers, syntax highlighting and send-to-assistant integration. Also includes searchable multi-conversation history and account memory manager.
 
             Install the APK on Android 6.0 or newer. This is a debug-signed test build.
           files: android/app/build/outputs/apk/debug/app-debug.apk
