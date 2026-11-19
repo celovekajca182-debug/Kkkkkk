@@ -6,6 +6,7 @@ from prepare_corpus import (
     clean_text,
     extract_oasst_pairs,
     load_finewiki_documents,
+    load_classic_documents,
     labels_have_rejection,
     russian_letter_ratio,
     split_items,
@@ -111,6 +112,33 @@ class CorpusPreparationTests(unittest.TestCase):
         self.assertLessEqual(len(train) + len(validation), 10)
         self.assertGreater(total_chars, 0)
         self.assertIn("Статья", train[0])
+
+    def test_classic_stream_keeps_russian_text_and_splits_validation(self):
+        class FakeStream(list):
+            def shuffle(self, seed, buffer_size):
+                return self
+
+        rows = [
+            {"text": f"Русский классический текст номер {index}. " + ("Описание природы и человеческих поступков. " * 10)}
+            for index in range(20)
+        ]
+        fake_datasets = types.SimpleNamespace(
+            load_dataset=lambda *args, **kwargs: FakeStream(rows)
+        )
+        with patch.dict("sys.modules", {"datasets": fake_datasets}):
+            train, validation, total_chars = load_classic_documents(
+                max_documents=10,
+                max_chars=10000,
+                max_doc_chars=1000,
+                min_doc_chars=30,
+                validation_fraction=0.2,
+                seed=19,
+            )
+        self.assertTrue(train)
+        self.assertTrue(validation)
+        self.assertLessEqual(len(train) + len(validation), 10)
+        self.assertGreater(total_chars, 0)
+        self.assertIn("Русский", train[0])
 
     def test_split_is_reproducible_and_nonempty(self):
         items = list(range(20))
