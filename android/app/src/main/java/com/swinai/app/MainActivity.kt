@@ -739,6 +739,15 @@ class MainActivity : Activity() {
                     copyMessageToClipboard(codeText, "Код скопирован")
                 }
             }
+            val saveFile = TextView(this).apply {
+                text = "＋ Файл"
+                textSize = 11f
+                setTextColor(chatColor("accent"))
+                gravity = Gravity.CENTER
+                setPadding(chatDp(8), 0, chatDp(4), 0)
+                setOnClickListener { showSaveGeneratedCode(codeText, language) }
+            }
+            toolbar.addView(saveFile, LinearLayout.LayoutParams(-2, chatDp(28)))
             toolbar.addView(copy, LinearLayout.LayoutParams(-2, chatDp(28)))
             codeCard.addView(toolbar)
             val codeView = makeText(codeText, 13f, chatColor("ink")).apply {
@@ -969,6 +978,212 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun dialogDismissSafe() {
+        // A picker may be launched from a workspace dialog; dismiss is handled by the caller.
+    }
+
+    private fun openProjectArchivePicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/zip"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(intent, REQUEST_IMPORT_PROJECT)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Не удалось открыть выбор ZIP-архива.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun requestProjectArchiveExport(projectId: String) {
+        val project = workspaceStore()?.project(projectId) ?: return
+        pendingProjectExportId = projectId
+        val title = project.optString("name", "swin-project")
+            .replace(Regex("[^\\p{L}\\p{N}._-]+"), "_")
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/zip"
+            putExtra(Intent.EXTRA_TITLE, "$title.zip")
+        }
+        try {
+            startActivityForResult(intent, REQUEST_EXPORT_PROJECT)
+        } catch (_: Exception) {
+            pendingProjectExportId = null
+            Toast.makeText(this, "Не удалось открыть сохранение архива.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun exportWorkspaceArchive(projectId: String, target: Uri) {
+        try {
+            val store = workspaceStore() ?: return
+            val manifest = store.exportProjectData(projectId).toString()
+            contentResolver.openOutputStream(target)?.use { output ->
+                ZipOutputStream(output).use { zip ->
+                    zip.putNextEntry(ZipEntry("swin-project.json"))
+                    zip.write(manifest.toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                }
+            } ?: throw IllegalStateException("Не удалось создать файл архива.")
+            Toast.makeText(this, "Проект экспортирован в ZIP.", Toast.LENGTH_LONG).show()
+        } catch (error: Exception) {
+            Toast.makeText(this, "Ошибка экспорта: ${error.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun importWorkspaceArchive(source: Uri) {
+        val store = workspaceStore() ?: return
+        Toast.makeText(this, "Проверяю ZIP-архив…", Toast.LENGTH_SHORT).show()
+        thread {
+            try {
+                var manifestBytes: ByteArray? = null
+                var entries = 0
+                var totalBytes = 0
+                contentResolver.openInputStream(source)?.use { input ->
+                    ZipInputStream(input).use { zip ->
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val entry = zip.nextEntry ?: break
+                            entries++
+                            if (entries > 100) throw IllegalArgumentException("В архиве слишком много файлов.")
+                            val name = entry.name
+                            if (name.startsWith("/") || name.contains("..") || name.contains("\\\\")) {
+                                throw IllegalArgumentException("Архив содержит небезопасный путь.")
+                            }
+                            if (name == "swin-project.json") {
+                                val bytes = ByteArrayOutputStream()
+                                while (true) {
+                                    val count = zip.read(buffer)
+                                    if (count < 0) break
+                                    totalBytes += count
+                                    if (totalBytes > 1_500_000) {
+                                        throw IllegalArgumentException("Размер проекта превышает лимит 1,5 МБ.")
+                                    }
+                                    bytes.write(buffer, 0, count)
+                                }
+                                manifestBytes = bytes.toByteArray()
+                            } else {
+                                while (zip.read(buffer) >= 0) Unit
+                            }
+                            zip.closeEntry()
+                        }
+                    }
+                } ?: throw IllegalArgumentException("Не удалось открыть ZIP-архив.")
+                val raw = manifestBytes ?: throw IllegalArgumentException("В архиве нет swin-project.json.")
+                val manifest = JSONObject(String(raw, Charsets.UTF_8))
+                if (manifest.optString("format") != "swin-ai-project" || manifest.optInt("version") != 1) {
+                    throw IllegalArgumentException("Формат архива SWIN не распознан.")
+                }
+                val files = manifest.optJSONArray("files") ?: JSONArray()
+                if (files.length() > 80) throw IllegalArgumentException("В проекте больше 80 файлов.")
+                val sourceFiles = (0 until files.length()).mapNotNull { files.optJSONObject(it) }
+                val projectName = manifest.optString("project_name", "Импортированный проект")
+                runOnUiThread {
+                    try {
+                        val imported = store.importProject(projectName, sourceFiles)
+                        Toast.makeText(
+                            this,
+                            "Импортирован проект: ${imported.optString("name")}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        showProjectFiles(imported.optString("id"))
+                    } catch (error: Exception) {
+                        Toast.makeText(this, "Ошибка импорта: ${error.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "ZIP не импортирован: ${error.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun showSaveGeneratedCode(code: String, rawLanguage: String) {
+        val store = workspaceStore() ?: return
+        if (code.isBlank()) return
+        val projects = try {
+            store.projects()
+        } catch (error: Exception) {
+            Toast.makeText(this, error.message, Toast.LENGTH_LONG).show()
+            return
+        }
+        val language = rawLanguage.lowercase().ifBlank { "text" }
+        val extension = when (language) {
+            "python", "py" -> "py"
+            "gdscript", "godot" -> "gd"
+            "kotlin", "kt" -> "kt"
+            "java" -> "java"
+            "javascript", "js" -> "js"
+            "typescript", "ts" -> "ts"
+            "html" -> "html"
+            "css" -> "css"
+            "json" -> "json"
+            "xml" -> "xml"
+            "sql" -> "sql"
+            "bash", "shell" -> "sh"
+            "go" -> "go"
+            "rust" -> "rs"
+            "c", "cpp", "c++" -> "cpp"
+            "csharp", "c#" -> "cs"
+            else -> "txt"
+        }
+        fun chooseFileName(projectId: String) {
+            val nameInput = makeEdit("Например, main.$extension", InputType.TYPE_CLASS_TEXT).apply {
+                setText("main.$extension")
+                background = chatBg(chatColor("panel"), 11, chatColor("stroke"))
+                setTextColor(chatColor("ink"))
+                setHintTextColor(chatColor("muted"))
+                setPadding(chatDp(12), chatDp(8), chatDp(12), chatDp(8))
+            }
+            val dialog = dialogBuilder().setTitle("Сохранить код в проект")
+                .setView(LinearLayout(this).apply {
+                    setPadding(chatDp(20), chatDp(8), chatDp(20), 0)
+                    addView(nameInput, LinearLayout.LayoutParams(-1, chatDp(50)))
+                })
+                .setNegativeButton("Отмена", null)
+                .setPositiveButton("Сохранить", null)
+                .create()
+            dialog.setOnShowListener {
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    try {
+                        val file = store.createFile(projectId, nameInput.text.toString(), language, code)
+                        dialog.dismiss()
+                        Toast.makeText(this, "Код сохранён в проект.", Toast.LENGTH_SHORT).show()
+                        showWorkspaceEditor(projectId, file)
+                    } catch (error: Exception) {
+                        nameInput.error = error.message ?: "Не удалось сохранить файл."
+                    }
+                }
+            }
+            dialog.show()
+        }
+        if (projects.isEmpty()) {
+            try {
+                val project = store.createProject("SWIN Generated")
+                chooseFileName(project.optString("id"))
+            } catch (error: Exception) {
+                Toast.makeText(this, error.message, Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        val labels = projects.map { it.optString("name") }.toMutableList()
+        labels.add("＋ Создать новый проект")
+        dialogBuilder().setTitle("Выбери проект для сохранения")
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which < projects.size) {
+                    chooseFileName(projects[which].optString("id"))
+                } else {
+                    val name = "SWIN Generated ${System.currentTimeMillis() / 1000L}"
+                    try {
+                        val project = store.createProject(name)
+                        chooseFileName(project.optString("id"))
+                    } catch (error: Exception) {
+                        Toast.makeText(this, error.message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }.show()
+    }
+
     private fun workspaceStore(): WorkspaceStore? {
         if (userEmail.isBlank()) {
             Toast.makeText(this, "Сначала войди в аккаунт.", Toast.LENGTH_SHORT).show()
@@ -1001,7 +1216,25 @@ class MainActivity : Activity() {
             setTextColor(chatColor("sendText"))
             background = chatBg(chatColor("accent"), 12)
         }
-        root.addView(create, LinearLayout.LayoutParams(-1, chatDp(46)).apply {
+        val workspaceActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        workspaceActions.addView(create, LinearLayout.LayoutParams(0, chatDp(46), 1f))
+        val importButton = TextView(this).apply {
+            text = "Импорт ZIP"
+            gravity = Gravity.CENTER
+            textSize = 13f
+            setTextColor(chatColor("accent"))
+            background = chatBg(chatColor("panel"), 11, chatColor("stroke"))
+            setOnClickListener {
+                dialogDismissSafe()
+                openProjectArchivePicker()
+            }
+        }
+        workspaceActions.addView(importButton, LinearLayout.LayoutParams(chatDp(112), chatDp(46)).apply {
+            marginStart = chatDp(8)
+        })
+        root.addView(workspaceActions, LinearLayout.LayoutParams(-1, chatDp(46)).apply {
             topMargin = chatDp(12)
         })
         val search = makeEdit("Найти проект…", InputType.TYPE_CLASS_TEXT).apply {
@@ -1025,6 +1258,10 @@ class MainActivity : Activity() {
         val dialog = dialogBuilder().setTitle("Рабочее пространство")
             .setView(root).setNegativeButton("Закрыть", null).create()
         dialog.show()
+        create.setOnClickListener {
+            dialog.dismiss()
+            showCreateWorkspaceProject()
+        }
 
         fun renderProjects(queryText: String) {
             list.removeAllViews()
@@ -1089,10 +1326,6 @@ class MainActivity : Activity() {
             }
         }
 
-        create.setOnClickListener {
-            dialog.dismiss()
-            showCreateWorkspaceProject()
-        }
         search.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -1162,7 +1395,22 @@ class MainActivity : Activity() {
             setTextColor(chatColor("sendText"))
             background = chatBg(chatColor("accent"), 12)
         }
-        root.addView(create, LinearLayout.LayoutParams(-1, chatDp(44)).apply {
+        val fileActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        fileActions.addView(create, LinearLayout.LayoutParams(0, chatDp(44), 1f))
+        val exportButton = TextView(this).apply {
+            text = "Экспорт ZIP"
+            gravity = Gravity.CENTER
+            textSize = 12f
+            setTextColor(chatColor("accent"))
+            background = chatBg(chatColor("panel"), 11, chatColor("stroke"))
+            setOnClickListener { requestProjectArchiveExport(projectId) }
+        }
+        fileActions.addView(exportButton, LinearLayout.LayoutParams(chatDp(112), chatDp(44)).apply {
+            marginStart = chatDp(8)
+        })
+        root.addView(fileActions, LinearLayout.LayoutParams(-1, chatDp(44)).apply {
             topMargin = chatDp(10)
         })
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
