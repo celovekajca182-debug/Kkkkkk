@@ -1075,7 +1075,7 @@ class MainActivity : Activity() {
                             val name = entry.name
                             if (
                                 name.startsWith("/") || name.contains(92.toChar()) ||
-                                name.contains("\u0000") || name.contains(":") ||
+                                name.any { it.code == 0 } || name.contains(':') ||
                                 name.split("/").any { it == ".." || it == "." }
                             ) {
                                 throw IllegalArgumentException("Архив содержит небезопасный путь.")
