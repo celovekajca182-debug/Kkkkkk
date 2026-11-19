@@ -74,7 +74,8 @@ class ChatHistoryStoreTests(unittest.TestCase):
 
             reopened.save_memory(1, "pref-1", "Русский язык по умолчанию", "preference")
             self.assertEqual(len(reopened.memories(1)), 2)
-            self.assertEqual(reopened.memories(1)[-1]["value"], "Русский язык по умолчанию")
+            updated_preference = next(item for item in reopened.memories(1) if item["memory_key"] == "pref-1")
+            self.assertEqual(updated_preference["value"], "Русский язык по умолчанию")
 
             self.assertEqual(reopened.delete_memory(1, "project-1"), 1)
             self.assertEqual(len(reopened.memories(1)), 1)
