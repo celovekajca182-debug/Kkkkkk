@@ -32,7 +32,7 @@ jobs:
           while IFS= read -r path; do
             [ -z "$path" ] && continue
             case "$path" in
-              README.md|docs/*|server/data/DATASET_SOURCES.md)
+              README.md|docs/*|server/data/DATASET_SOURCES.md|.github/workflows/promote-trained-model.yml)
                 ;;
               *)
                 echo "Training inputs or code changed after this run: $path" >&2
