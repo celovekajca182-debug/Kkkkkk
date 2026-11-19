@@ -11,26 +11,6 @@ on:
         description: "Эпохи дообучения на вопросах и ответах"
         required: true
         default: "6"
-  push:
-    branches: ["main"]
-    paths:
-      - "server/transformer.py"
-      - "server/train_transformer.py"
-      - "server/evaluate_transformer.py"
-      - "server/prepare_corpus.py"
-      - "server/prepare_coding_data.py"
-      - "server/data/train.txt"
-      - "server/data/knowledge.json"
-      - "server/data/dialogue.jsonl"
-      - "server/data/coding_dialogue.jsonl"
-      - "server/requirements-transformer.txt"
-      - "tests/test_transformer.py"
-      - "tests/test_evaluate_transformer.py"
-      - "tests/test_prepare_corpus.py"
-      - "tests/test_training_corpus.py"
-      - "tests/test_prepare_coding_data.py"
-      - ".github/workflows/train-transformer.yml"
-
 permissions:
   contents: write
 
