@@ -22,7 +22,7 @@ Dataset and model cards:
 
 ## Google Colab
 
-1. Open notebooks/SWIN_AI_QLoRA_Colab.ipynb in Colab.
+1. Open notebooks/SWIN_AI_QLoRA_Colab.ipynb in Colab. The notebook keeps Colab's preinstalled CUDA-enabled PyTorch rather than replacing it.
 2. Choose Runtime -> Change runtime type -> T4 GPU (or another CUDA GPU).
 3. Run cells from top to bottom.
 4. Create a Hugging Face access token with write access only if you want to publish the adapter. Log in through the Colab prompt; never paste the token into the notebook or commit it to Git.
