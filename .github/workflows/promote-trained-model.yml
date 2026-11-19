@@ -32,7 +32,7 @@ jobs:
           while IFS= read -r path; do
             [ -z "$path" ] && continue
             case "$path" in
-              README.md|docs/*|server/data/DATASET_SOURCES.md|server/app.py|server/assistant_core.py|server/knowledge.py|server/vision.py|server/coding_agent.py|server/transformer.py|server/evaluate_transformer.py|tests/*|android/**|.github/workflows/android-apk.yml|.github/workflows/promote-trained-model.yml)
+              README.md|docs/*|server/data/DATASET_SOURCES.md|server/app.py|server/assistant_core.py|server/knowledge.py|server/vision.py|server/llm_provider.py|server/prepare_wikipedia_corpus.py|server/coding_agent.py|server/transformer.py|server/evaluate_transformer.py|tests/*|android/**|.github/workflows/android-apk.yml|.github/workflows/promote-trained-model.yml|.github/workflows/train-transformer.yml|.github/workflows/publish-wikipedia-corpus.yml)
                 ;;
               *)
                 echo "Training inputs or code changed after this run: $path" >&2
