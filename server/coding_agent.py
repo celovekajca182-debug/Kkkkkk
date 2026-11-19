@@ -549,10 +549,19 @@ def _example_code(answer: str) -> str:
     )
     if match:
         return match.group(1).strip()
-    # Curated coding examples use a code-first answer followed by a blank line
-    # and a short implementation note.
-    return value.split("\n\n", 1)[0].strip()
 
+    # Code samples may contain blank lines inside functions and classes.
+    # Remove only a final prose note, not the first blank-line-delimited block.
+    note_start = re.search(
+        r"\n{2,}(?=(?:Добавь|Назначь|Используй|Проверь|Для сложного|Для production|"
+        r"Для публичного|Компилируй|Сохрани|Включи|Перед реальным|Перед запуском|"
+        r"Не вставляй|Не храни|Значения передавай)\b)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if note_start:
+        value = value[:note_start.start()]
+    return value.strip()
 
 def _make_prompt(
     task: str,
