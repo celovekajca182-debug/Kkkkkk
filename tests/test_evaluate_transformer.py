@@ -32,13 +32,13 @@ class EvaluateTransformerTests(unittest.TestCase):
 
     def test_valid_python_function_passes(self):
         result = assess_generated_text(
-            "def add(a, b):\\n    return a + b\\n",
+            "def add(a, b):\n    return a + b\n",
             require_code=True,
         )
         self.assertEqual(result["status"], "passed")
 
     def test_python_code_without_valid_syntax_fails(self):
-        result = assess_generated_text("def add(:\\n    return 1", require_code=True)
+        result = assess_generated_text("def add(:\n    return 1", require_code=True)
         self.assertEqual(result["status"], "failed")
 
     def test_model_passes_only_when_text_and_code_probes_pass(self):
@@ -47,7 +47,7 @@ class EvaluateTransformerTests(unittest.TestCase):
             "Она помогает разделять программу на небольшие повторно используемые части.",
             "Сначала прочитай полный Traceback, найди последнюю строку и определи тип ошибки. "
             "Затем проверь значение переменной и место вызова функции.",
-            "def add(a, b):\\n    return a + b\\n",
+            "def add(a, b):\n    return a + b\n",
         ])
         report = evaluate_model(model)
         self.assertTrue(report["accepted"])
@@ -59,7 +59,7 @@ class EvaluateTransformerTests(unittest.TestCase):
             "оооооооооооооооооооо",
             "Сначала прочитай сообщение ошибки и проверь типы значений. "
             "Затем найди строку исходного кода, где возникло исключение.",
-            "def add(a, b):\\n    return a + b\\n",
+            "def add(a, b):\n    return a + b\n",
         ])
         report = evaluate_model(model)
         self.assertFalse(report["accepted"])
