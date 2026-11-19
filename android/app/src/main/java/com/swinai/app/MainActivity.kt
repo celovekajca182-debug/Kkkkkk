@@ -978,10 +978,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun dialogDismissSafe() {
-        // A picker may be launched from a workspace dialog; dismiss is handled by the caller.
-    }
-
     private fun openProjectArchivePicker() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -1049,21 +1045,21 @@ class MainActivity : Activity() {
                             if (name.startsWith("/") || name.contains("..") || name.contains("\\\\")) {
                                 throw IllegalArgumentException("Архив содержит небезопасный путь.")
                             }
-                            if (name == "swin-project.json") {
-                                val bytes = ByteArrayOutputStream()
-                                while (true) {
-                                    val count = zip.read(buffer)
-                                    if (count < 0) break
-                                    totalBytes += count
-                                    if (totalBytes > 1_500_000) {
-                                        throw IllegalArgumentException("Размер проекта превышает лимит 1,5 МБ.")
-                                    }
-                                    bytes.write(buffer, 0, count)
-                                }
-                                manifestBytes = bytes.toByteArray()
-                            } else {
-                                while (zip.read(buffer) >= 0) Unit
+                            val isManifest = name == "swin-project.json"
+                            if (isManifest && manifestBytes != null) {
+                                throw IllegalArgumentException("В архиве несколько манифестов.")
                             }
+                            val bytes = if (isManifest) ByteArrayOutputStream() else null
+                            while (true) {
+                                val count = zip.read(buffer)
+                                if (count < 0) break
+                                totalBytes += count
+                                if (totalBytes > 1_500_000) {
+                                    throw IllegalArgumentException("Размер проекта превышает лимит 1,5 МБ.")
+                                }
+                                bytes?.write(buffer, 0, count)
+                            }
+                            if (isManifest) manifestBytes = bytes?.toByteArray()
                             zip.closeEntry()
                         }
                     }
@@ -1076,6 +1072,9 @@ class MainActivity : Activity() {
                 val files = manifest.optJSONArray("files") ?: JSONArray()
                 if (files.length() > 80) throw IllegalArgumentException("В проекте больше 80 файлов.")
                 val sourceFiles = (0 until files.length()).mapNotNull { files.optJSONObject(it) }
+                if (sourceFiles.size != files.length()) {
+                    throw IllegalArgumentException("Манифест проекта содержит некорректные записи файлов.")
+                }
                 val projectName = manifest.optString("project_name", "Импортированный проект")
                 runOnUiThread {
                     try {
@@ -1226,10 +1225,6 @@ class MainActivity : Activity() {
             textSize = 13f
             setTextColor(chatColor("accent"))
             background = chatBg(chatColor("panel"), 11, chatColor("stroke"))
-            setOnClickListener {
-                dialogDismissSafe()
-                openProjectArchivePicker()
-            }
         }
         workspaceActions.addView(importButton, LinearLayout.LayoutParams(chatDp(112), chatDp(46)).apply {
             marginStart = chatDp(8)
@@ -1261,6 +1256,10 @@ class MainActivity : Activity() {
         create.setOnClickListener {
             dialog.dismiss()
             showCreateWorkspaceProject()
+        }
+        importButton.setOnClickListener {
+            dialog.dismiss()
+            openProjectArchivePicker()
         }
 
         fun renderProjects(queryText: String) {
