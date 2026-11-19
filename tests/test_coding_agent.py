@@ -240,7 +240,7 @@ class CodingAgentTests(unittest.TestCase):
         self.assertIn("User:", calls[0][0])
 
     def test_cloud_provider_failure_falls_back_to_local_swin(self):
-        model = FakeModel("def local_answer(value):\\n    return value.strip()\\n")
+        model = FakeModel("def local_answer(value):\n    return value.strip()\n")
 
         def unavailable_provider(prompt, max_tokens):
             raise RuntimeError("provider unavailable")
