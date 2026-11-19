@@ -70,13 +70,24 @@ jobs:
           manifest = json.load(open(sys.argv[2], encoding="utf-8"))
           mbpp = json.load(open(sys.argv[3], encoding="utf-8"))
           assert isinstance(report, dict), "Training evaluation report is invalid"
+          assert report.get("accepted") is True, "Multilingual quality gate did not accept the checkpoint"
+          assert report.get("total_text_probes") == 11, "Expected all 11 multilingual text probes"
+          assert report.get("python_code_probe_passed") is True, "Python code probe did not pass"
           assert manifest.get("finewiki", {}).get("train_documents", 0) > 0, "FineWiki training data is missing"
-          assert manifest.get("fineweb2_hq", {}).get("train_documents", 0) > 0, "FineWeb2 training data is missing"
+          assert manifest.get("fineweb2_hq", {}).get("train_documents", 0) > 0, "Russian FineWeb2 training data is missing"
           assert manifest.get("ru_classic", {}).get("train_documents", 0) > 0, "ru-classic training data is missing"
-          assert manifest.get("openassistant", {}).get("train_pairs", 0) > 0, "OpenAssistant training data is missing"
+          multilingual_web = manifest.get("fineweb2_multilingual", {}).get("languages", {})
+          required_web_languages = ("de", "es", "fr", "zh", "it", "pt", "ja")
+          missing_web = [lang for lang in required_web_languages if multilingual_web.get(lang, {}).get("train_documents", 0) <= 0]
+          assert not missing_web, "Missing multilingual FineWeb2 training data: " + ", ".join(missing_web)
+          openassistant = manifest.get("openassistant", {})
+          required_chat_languages = ("ru", "en", "de", "es", "fr", "zh", "uk", "pt", "it", "ja")
+          language_pairs = openassistant.get("train_pairs_by_language", {})
+          missing_chat = [lang for lang in required_chat_languages if language_pairs.get(lang, 0) <= 0]
+          assert not missing_chat, "Missing OASST1 language pairs: " + ", ".join(missing_chat)
+          assert openassistant.get("train_pairs", 0) > 0, "OpenAssistant training data is missing"
           assert mbpp.get("train_examples", 0) > 0, "MBPP code-training data is missing"
-          print("Validated checkpoint files and all declared training sources.")
-          print("Training-revision evaluation accepted:", report.get("accepted"))
+          print("Validated the ten OASST1 languages, seven additional FineWeb2 languages and the multilingual quality gate.")
           PY
           echo "checkpoint=$CHECKPOINT" >> "$GITHUB_OUTPUT"
 
@@ -103,7 +114,7 @@ jobs:
           body: |
             SWIN AI checkpoint trained from the current main revision.
 
-            Sources: Russian FineWeb2-HQ, Russian FineWiki / Wikipedia, OpenAssistant OASST1, local project examples and MBPP Python tasks.
+            Sources: Russian + seven additional FineWeb2-HQ languages, Russian FineWiki / Wikipedia, ten OASST1 chat languages, local project examples and MBPP Python tasks.
 
             The candidate was re-evaluated with the current main-branch quality gate before promotion. Original and current evaluation reports, plus dataset manifests, are available in the originating workflow artifact or promotion logs. FineWiki source attribution and licenses are documented in server/data/DATASET_SOURCES.md.
           files: ${{ steps.verify.outputs.checkpoint }}
