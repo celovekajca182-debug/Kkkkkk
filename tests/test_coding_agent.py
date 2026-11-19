@@ -239,6 +239,25 @@ class CodingAgentTests(unittest.TestCase):
         self.assertGreater(calls[0][1], 0)
         self.assertIn("User:", calls[0][0])
 
+    def test_cloud_provider_failure_falls_back_to_local_swin(self):
+        model = FakeModel("def local_answer(value):\\n    return value.strip()\\n")
+
+        def unavailable_provider(prompt, max_tokens):
+            raise RuntimeError("provider unavailable")
+
+        result = run_code_assist(
+            "Создай функцию Python для очистки строки",
+            "python",
+            model,
+            research_web=False,
+            text_generator=unavailable_provider,
+            show_activity=True,
+        )
+        self.assertEqual(result["status"], "draft_validated")
+        self.assertEqual(result["generation_engine"], "local_swin_transformer")
+        self.assertIn("local_answer", result["code"])
+        self.assertTrue(any(item["stage"] == "provider_fallback" for item in result["activity"]))
+
     def test_missing_model_does_not_fake_code(self):
         result = run_code_assist(
             "Напиши API",
