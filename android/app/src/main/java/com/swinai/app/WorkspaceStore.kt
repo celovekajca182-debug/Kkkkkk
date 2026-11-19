@@ -61,6 +61,48 @@ internal class WorkspaceStore(context: Context, email: String) {
         return JSONObject(item.toString())
     }
 
+    fun exportProjectData(projectId: String): JSONObject {
+        val item = project(projectId) ?: throw IllegalArgumentException("Проект не найден.")
+        val exportFiles = JSONArray()
+        val files = item.optJSONArray("files") ?: JSONArray()
+        for (index in 0 until files.length()) {
+            val file = files.optJSONObject(index) ?: continue
+            exportFiles.put(
+                JSONObject()
+                    .put("name", file.optString("name"))
+                    .put("language", file.optString("language", "text"))
+                    .put("content", file.optString("content", ""))
+            )
+        }
+        return JSONObject()
+            .put("format", "swin-ai-project")
+            .put("version", 1)
+            .put("project_name", item.optString("name"))
+            .put("files", exportFiles)
+    }
+
+    fun importProject(projectName: String, sourceFiles: List<JSONObject>): JSONObject {
+        require(sourceFiles.size <= MAX_FILES_PER_PROJECT) {
+            "В архиве максимум $MAX_FILES_PER_PROJECT файлов."
+        }
+        val created = createProject(projectName)
+        val projectId = created.optString("id")
+        try {
+            for (file in sourceFiles) {
+                createFile(
+                    projectId,
+                    file.optString("name"),
+                    file.optString("language", "text"),
+                    file.optString("content", "")
+                )
+            }
+            return project(projectId) ?: throw IllegalStateException("Не удалось проверить импорт проекта.")
+        } catch (error: Exception) {
+            deleteProject(projectId)
+            throw error
+        }
+    }
+
     fun deleteProject(projectId: String): Boolean {
         val root = readRoot()
         val projects = root.optJSONArray("projects") ?: JSONArray()
