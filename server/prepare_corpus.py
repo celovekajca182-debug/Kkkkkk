@@ -22,12 +22,15 @@ PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d\s().-]{7,}\d)(?!\w)")
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 LETTER_RE = re.compile(r"[A-Za-zА-Яа-яЁё]")
 
-OASST_LANGUAGE_CODES = ("ru", "en", "de", "es", "fr", "zh")
+OASST_LANGUAGE_CODES = ("ru", "en", "de", "es", "fr", "zh", "uk", "pt", "it", "ja")
 FINEWEB2_MULTILINGUAL_CONFIGS = {
     "deu_Latn": "de",
     "spa_Latn": "es",
     "fra_Latn": "fr",
     "cmn_Hani": "zh",
+    "ita_Latn": "it",
+    "por_Latn": "pt",
+    "jpn_Jpan": "ja",
 }
 REJECT_LABELS = {
     "spam",
@@ -70,6 +73,14 @@ def script_letter_ratio(text: str, language: str) -> float:
     if language == "zh":
         return sum(
             "CJK UNIFIED IDEOGRAPH" in unicodedata.name(char, "")
+            or "CJK COMPATIBILITY IDEOGRAPH" in unicodedata.name(char, "")
+            for char in letters
+        ) / len(letters)
+    if language == "ja":
+        return sum(
+            "HIRAGANA" in unicodedata.name(char, "")
+            or "KATAKANA" in unicodedata.name(char, "")
+            or "CJK UNIFIED IDEOGRAPH" in unicodedata.name(char, "")
             or "CJK COMPATIBILITY IDEOGRAPH" in unicodedata.name(char, "")
             for char in letters
         ) / len(letters)
@@ -138,10 +149,10 @@ def valid_oasst_row(row: dict) -> bool:
 
 
 def extract_oasst_pairs(rows: Iterable[dict], max_pairs: int, seed: int = 17):
-    """Pair reviewed OASST prompts/replies in six well-represented languages.
+    """Pair reviewed OASST prompts/replies in ten represented languages.
 
     Samples are balanced round-robin so English or Spanish cannot crowd out
-    Russian, German, French or Chinese in the limited SFT budget.
+    Russian, German, French, Chinese, Ukrainian, Portuguese, Italian or Japanese.
     """
     by_id = {
         row.get("message_id"): row
@@ -413,7 +424,10 @@ def main():
     parser.add_argument("--wiki-max-chars", type=int, default=600000)
     parser.add_argument("--classic-documents", type=int, default=400)
     parser.add_argument("--classic-max-chars", type=int, default=250000)
-    parser.add_argument("--multilingual-web-languages", default="deu_Latn,spa_Latn,fra_Latn,cmn_Hani")
+    parser.add_argument(
+        "--multilingual-web-languages",
+        default="deu_Latn,spa_Latn,fra_Latn,cmn_Hani,ita_Latn,por_Latn,jpn_Jpan",
+    )
     parser.add_argument("--multilingual-web-documents", type=int, default=300)
     parser.add_argument("--multilingual-web-max-chars", type=int, default=100000)
     parser.add_argument("--max-doc-chars", type=int, default=3000)
@@ -505,7 +519,7 @@ def main():
         write_text(language_dir / f"fineweb2_{language}_train.txt", documents["train"])
         write_text(language_dir / f"fineweb2_{language}_validation.txt", documents["validation"])
     write_jsonl(output / "openassistant_multilingual_train.jsonl", sft_train)
-    write_jsonl(output / "openassistant_ru_validation.jsonl", sft_valid)
+    write_jsonl(output / "openassistant_multilingual_validation.jsonl", sft_valid)
 
     manifest = {
         "seed": args.seed,
@@ -567,7 +581,7 @@ def main():
                 for language in OASST_LANGUAGE_CODES
             },
             "filters": [
-                "lang in ru/en/de/es/fr/zh",
+                "lang in ru/en/de/es/fr/zh/uk/pt/it/ja",
                 "review_result=true",
                 "not deleted or synthetic",
                 "paired assistant message with its parent prompter message",
