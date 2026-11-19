@@ -31,14 +31,24 @@ def join_corpus(*pieces: str) -> str:
     return "\n\n".join(piece.strip() for piece in pieces if piece and piece.strip()) + "\n"
 
 
-def build_pretraining_corpus(data_path: Path, web_path: Path) -> str:
+def build_pretraining_corpus(
+    data_path: Path,
+    web_path: Path,
+    wiki_path: Path | None = None,
+) -> str:
     pieces = [
-        "Русскоязычный текстовый корпус для предобучения SWIN AI. Задача модели — предсказывать следующий токен по предыдущему контексту.",
+        "Русскоязычный текстовый корпус SWIN AI. Задача модели — предсказывать следующий токен по предыдущему контексту.",
+        "Источник: отобранные открытые русские веб-документы.",
     ]
     if data_path.is_file():
         pieces.append(data_path.read_text(encoding="utf-8"))
     if web_path.is_file():
         pieces.append(web_path.read_text(encoding="utf-8"))
+    if wiki_path is not None and wiki_path.is_file():
+        pieces.extend([
+            "Энциклопедические материалы русской Wikipedia (FineWiki).",
+            wiki_path.read_text(encoding="utf-8"),
+        ])
     return join_corpus(*pieces)
 
 
@@ -183,6 +193,8 @@ def main():
     parser.add_argument("--dialogue", default="data/dialogue.jsonl")
     parser.add_argument("--web-train", default="data/fineweb2_ru_train.txt")
     parser.add_argument("--web-validation", default="data/fineweb2_ru_validation.txt")
+    parser.add_argument("--wiki-train", default="data/finewiki_ru_train.txt")
+    parser.add_argument("--wiki-validation", default="data/finewiki_ru_validation.txt")
     parser.add_argument("--instructions-train", default="data/openassistant_ru_train.jsonl")
     parser.add_argument("--instructions-validation", default="data/openassistant_ru_validation.jsonl")
     parser.add_argument("--coding-train", default="data/mbpp_python_train.jsonl")
@@ -214,12 +226,16 @@ def main():
     print(f"Устройство обучения: {device}")
 
     # Подготовить обе стадии заранее, чтобы они использовали один и тот же Unicode-словарь.
-    pretrain_train = build_pretraining_corpus(Path(args.data), Path(args.web_train))
-    pretrain_validation = (
-        Path(args.web_validation).read_text(encoding="utf-8")
-        if Path(args.web_validation).is_file()
-        else ""
+    pretrain_train = build_pretraining_corpus(
+        Path(args.data),
+        Path(args.web_train),
+        Path(args.wiki_train),
     )
+    validation_parts = []
+    for validation_path in (Path(args.web_validation), Path(args.wiki_validation)):
+        if validation_path.is_file():
+            validation_parts.append(validation_path.read_text(encoding="utf-8"))
+    pretrain_validation = join_corpus(*validation_parts)
     sft_train = build_instruction_corpus(
         Path(args.knowledge),
         Path(args.dialogue),
