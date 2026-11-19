@@ -66,6 +66,21 @@ Set these as server-side secrets/environment variables. Never put the provider k
 
 When a role-specific URL and the shared `SWIN_LLM_BASE_URL` are all empty, SWIN preserves the legacy local-checkpoint path for that role. A role-specific URL overrides the shared gateway URL. If the configured provider is unavailable, the existing local model/retrieval fallback remains in place.
 
+## Easiest setup: Hugging Face Inference Providers
+
+The model pages currently list inference providers for both selected models: Qwen3-4B-Thinking-2507 and Qwen2.5-Coder-7B-Instruct. Hugging Face exposes an OpenAI-compatible router, so SWIN can use one URL and one token while still sending the selected model ID for each role.
+
+In the Render API service environment, set:
+
+```text
+SWIN_LLM_BASE_URL=https://router.huggingface.co/v1
+SWIN_LLM_API_KEY=hf_your_inference_token
+SWIN_CHAT_MODEL=Qwen/Qwen3-4B-Thinking-2507
+SWIN_CODE_MODEL=Qwen/Qwen2.5-Coder-7B-Instruct
+```
+
+Create a Hugging Face token with inference permissions, enable an available provider in the Inference Providers settings, add these values to the server (not the Android app), and redeploy the API. Hugging Face routes chat-completion requests to a provider serving the model. Provider usage is billed at that provider's price; check current pricing before using it. You do not need to configure `SWIN_CHAT_BASE_URL` or `SWIN_CODE_BASE_URL` when using the shared router.
+
 ## Example: vLLM
 
 Run each model on a GPU inference host and set `SWIN_CHAT_BASE_URL` and `SWIN_CODE_BASE_URL` separately, or expose both behind a model-routing gateway and use `SWIN_LLM_BASE_URL`. The official Qwen model cards include vLLM commands and OpenAI-compatible chat-completions examples. A single vLLM process started with one model serves that model only; two model IDs require two deployments or a compatible gateway.
