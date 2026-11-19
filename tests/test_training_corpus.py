@@ -13,6 +13,7 @@ from train_transformer import (
     build_sft_windows,
     build_tensor_splits,
     read_instruction_file,
+    read_instruction_records,
 )
 
 
@@ -25,7 +26,7 @@ class TrainingCorpusTests(unittest.TestCase):
                 encoding="utf-8",
             )
             records = read_instruction_file(path)
-        self.assertEqual(records, ["Пользователь: Как начать?\nSWIN: Сначала проверь проект."])
+        self.assertEqual(records, ["Response language: Russian.\nUser: Как начать?\nAssistant:\nСначала проверь проект."])
 
     def test_pretraining_and_sft_corpora_are_separated(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -52,8 +53,38 @@ class TrainingCorpusTests(unittest.TestCase):
         self.assertIn("Дополнительный веб-документ", pretrain)
         self.assertIn("Статья Википедии", pretrain)
         self.assertNotIn("Что это?", pretrain)
-        self.assertIn("Пользователь: Что это?", sft)
+        self.assertIn("User: Что это?", sft)
         self.assertNotIn("веб-документ", sft)
+
+    def test_instruction_records_keep_explicit_language_tags(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "multilingual.jsonl"
+            path.write_text(
+                '{"question":"How do functions work?","answer":"A function returns a value.","language":"en"}\\n'
+                '{"question":"関数とは何ですか？","answer":"関数は値を返します。","language":"ja"}\\n',
+                encoding="utf-8",
+            )
+            records = read_instruction_records(path)
+        self.assertEqual([record[2] for record in records], ["en", "ja"])
+
+    def test_multilingual_sft_prompt_contains_requested_response_language(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "knowledge.json").write_text("[]", encoding="utf-8")
+            (root / "dialogue.jsonl").write_text("", encoding="utf-8")
+            (root / "oasst.jsonl").write_text(
+                '{"question":"Bonjour, comment créer une fonction ?","answer":"Une fonction retourne un résultat.","language":"fr"}\\n',
+                encoding="utf-8",
+            )
+            examples = build_instruction_examples(
+                root / "knowledge.json",
+                root / "dialogue.jsonl",
+                root / "oasst.jsonl",
+            )
+        self.assertEqual(len(examples), 1)
+        self.assertIn("Response language: French.", examples[0][0])
+        self.assertIn("User:", examples[0][0])
+        self.assertIn("Assistant:", examples[0][0])
 
     def test_project_code_examples_are_included_in_instruction_tuning(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -80,14 +111,14 @@ class TrainingCorpusTests(unittest.TestCase):
         self.assertIn("CharacterBody2D", sft)
 
     def test_sft_windows_mask_user_prompt_and_train_only_assistant_answer(self):
-        prompt = "Пользователь: Что такое функция в Python?"
+        prompt = "Response language: Russian.\nUser: Что такое функция в Python?\nAssistant:"
         answer = "Функция — это именованный блок кода, который выполняет задачу и может вернуть результат."
         tokenizer = CharTokenizer.from_texts([prompt, answer, prompt + "\nSWIN:"])
         windows = build_sft_windows([(prompt, answer)], tokenizer, block_size=96)
         self.assertTrue(windows)
 
         input_ids, targets = windows[0]
-        prompt_token_count = len(tokenizer.encode(prompt + "\nSWIN:"))
+        prompt_token_count = len(tokenizer.encode(prompt))
         valid_positions = [index for index, token in enumerate(targets.tolist()) if token != -100]
         self.assertEqual(valid_positions[0], prompt_token_count - 1)
         self.assertEqual(input_ids.numel(), 96)
@@ -95,7 +126,7 @@ class TrainingCorpusTests(unittest.TestCase):
         self.assertTrue(all(token == -100 for token in targets[:prompt_token_count - 1].tolist()))
 
     def test_sft_windows_cover_long_answers_with_overlapping_context(self):
-        prompt = "Пользователь: Объясни обработку исключений в Python."
+        prompt = "Response language: Russian.\nUser: Объясни обработку исключений в Python.\nAssistant:"
         answer = ("Используй try и except для обработки ожидаемых ошибок. " * 12)
         tokenizer = CharTokenizer.from_texts([prompt, answer, prompt + "\nSWIN:"])
         windows = build_sft_windows([(prompt, answer)], tokenizer, block_size=64)
@@ -103,7 +134,7 @@ class TrainingCorpusTests(unittest.TestCase):
         self.assertTrue(all(torch.any(targets != -100) for _, targets in windows))
 
     def test_sft_bpe_windows_include_eos_and_mask_prompt_tokens(self):
-        prompt = "Пользователь: Напиши функцию Python."
+        prompt = "Response language: Russian.\nUser: Напиши функцию Python.\nAssistant:"
         answer = "def add(a, b):\n    return a + b"
         corpus = (prompt + "\nSWIN: " + answer + "\n") * 80
         tokenizer = BPEByteTokenizer.from_texts([corpus], vocab_size=512)
@@ -111,7 +142,7 @@ class TrainingCorpusTests(unittest.TestCase):
         self.assertTrue(windows)
         self.assertTrue(any(torch.any(targets == tokenizer.eos_token_id) for _, targets in windows))
         _, targets = windows[0]
-        prompt_count = len(tokenizer.encode(prompt + "\nSWIN:"))
+        prompt_count = len(tokenizer.encode(prompt))
         self.assertTrue(torch.all(targets[:max(0, prompt_count - 1)] == -100))
 
     def test_instruction_examples_are_deduplicated_and_keep_prompt_answer_separate(self):
@@ -131,7 +162,7 @@ class TrainingCorpusTests(unittest.TestCase):
                 root / "missing.jsonl",
             )
         self.assertEqual(len(examples), 1)
-        self.assertIn("Пользователь:", examples[0][0])
+        self.assertIn("User:", examples[0][0])
         self.assertEqual(examples[0][1], "Именованный блок кода.")
 
     def test_tensor_splits_use_distinct_validation_corpus(self):
