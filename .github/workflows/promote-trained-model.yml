@@ -56,21 +56,26 @@ jobs:
           CHECKPOINT="$(find artifact -type f -name 'swin-transformer.pt' -print -quit)"
           EVALUATION="$(find artifact -type f -name 'evaluation.json' -print -quit)"
           MANIFEST="$(find artifact -type f -name 'dataset_manifest.json' -print -quit)"
+          MBPP_MANIFEST="$(find artifact -type f -name 'mbpp_manifest.json' -print -quit)"
           test -n "$CHECKPOINT"
           test -n "$EVALUATION"
           test -n "$MANIFEST"
+          test -n "$MBPP_MANIFEST"
           test -s "$CHECKPOINT"
-          python - "$EVALUATION" "$MANIFEST" <<'PY'
+          python - "$EVALUATION" "$MANIFEST" "$MBPP_MANIFEST" <<'PY'
           import json
           import sys
 
           report = json.load(open(sys.argv[1], encoding="utf-8"))
           manifest = json.load(open(sys.argv[2], encoding="utf-8"))
+          mbpp = json.load(open(sys.argv[3], encoding="utf-8"))
           assert report.get("accepted") is True, "Evaluation gate did not accept the checkpoint"
           assert manifest.get("finewiki", {}).get("train_documents", 0) > 0, "FineWiki training data is missing"
           assert manifest.get("fineweb2_hq", {}).get("train_documents", 0) > 0, "FineWeb2 training data is missing"
+          assert manifest.get("ru_classic", {}).get("train_documents", 0) > 0, "ru-classic training data is missing"
           assert manifest.get("openassistant", {}).get("train_pairs", 0) > 0, "OASST instruction data is missing"
-          print("Validated accepted checkpoint and all three training sources.")
+          assert mbpp.get("train_examples", 0) > 0, "MBPP code-training data is missing"
+          print("Validated accepted checkpoint and all declared training sources.")
           PY
           echo "checkpoint=$CHECKPOINT" >> "$GITHUB_OUTPUT"
 
