@@ -4,7 +4,14 @@ from pathlib import Path
 
 import torch
 
-from transformer import ByteTokenizer, CharTokenizer, SWINTransformer, load_transformer, save_transformer
+from transformer import (
+    ByteTokenizer,
+    CharTokenizer,
+    SWINTransformer,
+    load_transformer,
+    save_transformer,
+    suppress_repeated_ngrams,
+)
 
 
 class ByteTokenizerTests(unittest.TestCase):
@@ -98,6 +105,18 @@ class SWINTransformerTests(unittest.TestCase):
             logits_a, _ = self.model(first)
             logits_b, _ = self.model(second)
         self.assertTrue(torch.allclose(logits_a[:, :12], logits_b[:, :12], atol=1e-5))
+
+    def test_no_repeat_ngram_blocks_a_repeated_character_sequence(self):
+        history = [1, 2, 3, 4, 1, 2, 3]
+        logits = torch.zeros(8)
+        filtered = suppress_repeated_ngrams(logits, history, ngram_size=4)
+        self.assertEqual(float(filtered[4]), float("-inf"))
+        self.assertTrue(torch.isfinite(filtered[5]))
+
+    def test_no_repeat_ngram_is_noop_until_context_is_long_enough(self):
+        logits = torch.zeros(8)
+        filtered = suppress_repeated_ngrams(logits, [1, 2], ngram_size=4)
+        self.assertTrue(torch.equal(filtered, logits))
 
     def test_generate_returns_valid_text(self):
         result = self.model.generate("Пользователь:", max_new_tokens=8)
