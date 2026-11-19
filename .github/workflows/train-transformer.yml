@@ -41,6 +41,7 @@ jobs:
           pip install -r server/requirements-transformer.txt --extra-index-url https://download.pytorch.org/whl/cpu
           pip install datasets==3.3.2
       - name: Prepare capped multilingual open datasets
+        # Ten OASST1 response languages plus seven capped FineWeb2-HQ language subsets.
         working-directory: server
         run: |
           python prepare_corpus.py \
