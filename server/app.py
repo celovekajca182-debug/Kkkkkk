@@ -571,7 +571,11 @@ def code_assist(
         raise HTTPException(status_code=422, detail=str(error)) from error
     result["elapsed_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
     result["model_loaded"] = transformer_model is not None or llm_enabled()
-    result["generation_engine"] = "responses_api" if llm_enabled() else "local_swin_transformer"
+    result["generation_engine"] = (
+        "responses_api" if llm_enabled()
+        else "local_swin_transformer" if transformer_model is not None
+        else "curated_retrieval_or_fallback"
+    )
     result["memory_context_turns"] = len(recent_turns)
     if session_id:
         assistant_text = result.get("summary", "Результат режима разработки.")
@@ -760,11 +764,11 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                 ),
                 max_output_tokens=1800,
             ).strip()
-            generated_answer = generated_answer.split("\\nUser:", 1)[0].strip()
-            generated_answer = generated_answer.split("\\nПользователь:", 1)[0].strip()
+            generated_answer = generated_answer.split("\nUser:", 1)[0].strip()
+            generated_answer = generated_answer.split("\nПользователь:", 1)[0].strip()
             if generated_answer and not looks_like_garbage(generated_answer):
                 if references:
-                    generated_answer += "\\n\\nИсточники:\\n" + "\\n".join(
+                    generated_answer += "\n\nИсточники:\n" + "\n".join(
                         f"[{index}] {item['title']} ({item.get('source_type', 'веб-источник')}) — {item['url']}"
                         for index, item in enumerate(references[:4], 1)
                     )
