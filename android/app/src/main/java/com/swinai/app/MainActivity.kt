@@ -864,7 +864,18 @@ class MainActivity : Activity() {
                             val item = messages.optJSONObject(index) ?: continue
                             val role = item.optString("role", "assistant")
                             val content = item.optString("content", "")
-                            if (content.isNotBlank()) appendChatMessage(role, content)
+                            if (content.isNotBlank()) {
+                                val codeMarker = "\\n\\n[SWIN_CODE_BLOCK]\\n"
+                                val markerIndex = content.indexOf(codeMarker)
+                                if (role == "assistant" && markerIndex >= 0) {
+                                    val summary = content.substring(0, markerIndex).trim()
+                                    val code = content.substring(markerIndex + codeMarker.length).trim()
+                                    if (summary.isNotBlank()) appendChatMessage("assistant", summary)
+                                    if (code.isNotBlank()) appendChatMessage("assistant", code, true, code)
+                                } else {
+                                    appendChatMessage(role, content)
+                                }
+                            }
                         }
                     }
                 }
@@ -1054,8 +1065,16 @@ class MainActivity : Activity() {
                             lastGeneratedCode = code
                             copyCodeButton.isEnabled = true
                         }
-                        appendChatMessage("assistant", output.toString(), code.isNotBlank(), code.takeIf { it.isNotBlank() })
-                        cacheLocalMessage("assistant", output.toString())
+                        if (code.isNotBlank()) {
+                            val summary = output.toString().substringBefore("\\n\\nКОД:\\n").trim()
+                            appendChatMessage("assistant", summary)
+                            appendChatMessage("assistant", code, true, code)
+                            cacheLocalMessage("assistant", summary + "\\n\\n[SWIN_CODE_BLOCK]\\n" + code)
+                        } else {
+                            val outputText = output.toString()
+                            appendChatMessage("assistant", outputText)
+                            cacheLocalMessage("assistant", outputText)
+                        }
                         sendButton.isEnabled = true
                     }
                 } else {
