@@ -254,6 +254,10 @@ def root():
         "knowledge_entries": knowledge.size,
         "active_sessions": len(conversation_memory),
         "auth": "email-password",
+        "storage_backend": "postgresql" if database_url else "sqlite",
+        "persistent_storage": bool(database_url),
+        "cross_device_memory": bool(database_url),
+        "code_quality_guard": True,
         "version": app.version,
     }
 
@@ -265,6 +269,10 @@ def health():
         "transformer_loaded": transformer_model is not None,
         "rnn_loaded": rnn_model is not None,
         "knowledge_entries": knowledge.size,
+        "storage_backend": "postgresql" if database_url else "sqlite",
+        "persistent_storage": bool(database_url),
+        "cross_device_memory": bool(database_url),
+        "code_quality_guard": True,
     }
 
 
