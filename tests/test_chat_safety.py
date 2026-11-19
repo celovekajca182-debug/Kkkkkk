@@ -30,6 +30,13 @@ class ChatSafetyTests(unittest.TestCase):
     def test_repeated_vowel_stream_is_rejected(self):
         self.assertTrue(looks_like_garbage("оооооооооооооооооооооооо"))
 
+    def test_chinese_answer_is_not_rejected_as_gibberish(self):
+        self.assertFalse(looks_like_garbage("函数是一段代码，可以接收参数并执行操作，然后返回计算结果。"))
+
+    def test_japanese_kana_and_kanji_answer_is_not_rejected(self):
+        self.assertFalse(looks_like_garbage("関数はコードのまとまりで、値を受け取り、結果を返します。"))
+        self.assertFalse(looks_like_garbage("ひらがなだけの文章でも正しい日本語として扱います。"))
+
     def test_normal_russian_sentence_is_not_rejected(self):
         sample = "Для этого открой настройки приложения и проверь подключение к серверу."
         self.assertFalse(looks_like_garbage(sample))
