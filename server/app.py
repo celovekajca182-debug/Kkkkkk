@@ -39,6 +39,12 @@ from knowledge import KnowledgeBase
 from local_agent import build_evidence_ledger, capability_report, execute_local_plan, plan_task, register_local_tool
 from project_agent import ProjectBundleError, generate_local_project_scaffold, validate_project_manifest
 from model import TinyCharRNN
+from llm_provider import (
+    CHAT_MODEL,
+    CODE_MODEL,
+    generate_model_text,
+    provider_configured,
+)
 
 app = FastAPI(title="SWIN AI", version="0.6.0")
 
@@ -591,6 +597,13 @@ def code_assist(
 
     try:
         code_generator = None
+        if provider_configured():
+            code_generator = lambda prompt, _limit: generate_model_text(
+                prompt,
+                role="code",
+                max_tokens=int(os.getenv("SWIN_CODE_MAX_TOKENS", "2400")),
+                temperature=float(os.getenv("SWIN_CODE_TEMPERATURE", "0.15")),
+            )
         result = run_code_assist(
             task=request.task,
             language=request.language,
@@ -604,11 +617,13 @@ def code_assist(
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     result["elapsed_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
-    result["model_loaded"] = transformer_model is not None
+    result["model_loaded"] = transformer_model is not None or provider_configured()
     result["generation_engine"] = (
-        "local_swin_transformer" if transformer_model is not None
+        "qwen2_5_coder" if provider_configured()
+        else "local_swin_transformer" if transformer_model is not None
         else "local_retrieval_and_static_tools"
     )
+    result["model"] = CODE_MODEL if provider_configured() else None
     result["agent"] = execute_local_plan(
         request.task,
         language=request.response_language,
@@ -867,9 +882,10 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     persistent_memories = select_relevant_memories(
         message, chat_history.memories(user_id, limit=50), limit=8
     )
-    if transformer_model is not None:
+    if transformer_model is not None or provider_configured():
         tokenizer = getattr(transformer_model, "tokenizer", None)
-        block_size = int(getattr(transformer_model, "block_size", 512))
+        default_context = int(os.getenv("SWIN_CHAT_PROMPT_BYTES", "12000")) if provider_configured() else 512
+        block_size = int(getattr(transformer_model, "block_size", default_context))
         prompt = build_reasoning_prompt(
             history=history,
             message=message,
@@ -880,27 +896,41 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             block_size=block_size,
         )
         try:
-            generated_answer = transformer_model.generate(
-                prompt,
-                max_new_tokens=220,
-                temperature=0.0,
-                top_k=1,
-                stop_at_newline=False,
-            ).strip()
+            if provider_configured():
+                generated_answer = generate_model_text(
+                    prompt,
+                    role="chat",
+                    max_tokens=int(os.getenv("SWIN_CHAT_MAX_TOKENS", "1200")),
+                    temperature=float(os.getenv("SWIN_CHAT_TEMPERATURE", "0.25")),
+                ).strip()
+            else:
+                generated_answer = transformer_model.generate(
+                    prompt,
+                    max_new_tokens=220,
+                    temperature=0.0,
+                    top_k=1,
+                    stop_at_newline=False,
+                ).strip()
             generated_answer = generated_answer.split("\nUser:", 1)[0].strip()
             generated_answer = generated_answer.split("\nПользователь:", 1)[0].strip()
             generation_valid = bool(generated_answer) and not looks_like_garbage(generated_answer)
             if generation_valid:
                 answer = generated_answer
-                response_mode = "retrieval_augmented_transformer" if references or persistent_memories else "structured_transformer"
+                model_label = CHAT_MODEL if provider_configured() else "SWIN Transformer"
+                response_mode = (
+                    "retrieval_augmented_qwen3" if provider_configured() and (references or persistent_memories)
+                    else "qwen3_chat" if provider_configured()
+                    else "retrieval_augmented_transformer" if (references or persistent_memories)
+                    else "structured_transformer"
+                )
                 response_source = (
-                    "SWIN Transformer + веб-источники + долговременная память"
+                    f"{model_label} + веб-источники + долговременная память"
                     if references and persistent_memories
-                    else "SWIN Transformer + веб-источники"
+                    else f"{model_label} + веб-источники"
                     if references
-                    else "SWIN Transformer + долговременная память"
+                    else f"{model_label} + долговременная память"
                     if persistent_memories
-                    else "собственные веса SWIN Transformer"
+                    else f"модель {model_label}"
                 )
                 if references:
                     source_lines = [
@@ -928,7 +958,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                 memory_used=bool(persistent_memories),
                 reasoning_mode="private_plan_evidence_check",
             )
-            if generation_valid:
+            if generation_valid and not provider_configured():
                 try:
                     generated_tokens = len(tokenizer.encode(generated_answer)) if tokenizer is not None else len(generated_answer.encode("utf-8"))
                 except Exception:
@@ -1037,12 +1067,12 @@ def capabilities():
             "reason": "Собственная мультимодальная модель ещё не прошла проверку.",
         },
         "reasoning": {
-            "provider_enabled": False,
-            "external_model_api": False,
-            "engine": "swin-local-agent",
-            "chat_model": "local_swin_transformer" if transformer_model is not None else None,
-            "coding_model": "local_swin_transformer" if transformer_model is not None else None,
-            "fallback": "local_retrieval_and_static_tools",
+            "provider_enabled": provider_configured(),
+            "external_model_api": provider_configured(),
+            "engine": "qwen_dual_model_router" if provider_configured() else "swin-local-agent",
+            "chat_model": CHAT_MODEL if provider_configured() else ("local_swin_transformer" if transformer_model is not None else None),
+            "coding_model": CODE_MODEL if provider_configured() else ("local_swin_transformer" if transformer_model is not None else None),
+            "fallback": "local_swin_transformer_then_retrieval" if transformer_model is not None else "local_retrieval_and_static_tools",
         },
         "agent": capability_report(),
         "knowledge": {
