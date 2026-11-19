@@ -21,6 +21,7 @@
 - [OLMo / OLMo-core](https://github.com/allenai/OLMo-core) — открытый код, обучающие рецепты и двухэтапный curriculum.
 - [GPT-NeoX](https://github.com/EleutherAI/gpt-neox) и [Pythia](https://huggingface.co/EleutherAI/pythia-160m) — масштабный distributed training и The Pile.
 - [FineWeb2-HQ](https://huggingface.co/datasets/epfml/FineWeb2-HQ) — качественный мультиязычный веб-корпус, включая русский.
+- [FineWiki](https://huggingface.co/datasets/HuggingFaceFW/finewiki) — обработанные энциклопедические статьи Wikipedia; для русской версии сохраняется CC BY-SA 4.0 и атрибуция.
 - [OpenAssistant OASST1](https://huggingface.co/datasets/OpenAssistant/oasst1) — проверенные диалоговые данные.
 
 Мы переносим подходы и явно открытые данные, а не копируем чужие веса или выдаём чужую модель за SWIN.
