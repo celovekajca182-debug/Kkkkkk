@@ -37,6 +37,7 @@ from postgres_stores import (
 )
 from knowledge import KnowledgeBase
 from local_agent import build_evidence_ledger, capability_report, execute_local_plan, plan_task, register_local_tool
+from project_agent import ProjectBundleError, generate_local_project_scaffold
 from model import TinyCharRNN
 
 app = FastAPI(title="SWIN AI", version="0.6.0")
@@ -628,16 +629,34 @@ def generate_complete_project(
     http_request: Request,
     user: dict = Depends(get_current_user),
 ):
-    """Refuse unsupported full-project generation rather than using a remote LLM."""
+    """Create a deterministic local starter scaffold without external model providers."""
+    started_at = time.perf_counter()
     enforce_auth_rate_limit(http_request, f"project:{user['id']}", 8)
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            "Полная генерация проекта собственной SWIN пока отключена: текущий checkpoint "
-            "не прошёл проверку качества на связном коде. Сторонние LLM API не используются. "
-            "Локальное создание файлов вручную, ZIP и статическая проверка доступны."
-        ),
+    try:
+        result = generate_local_project_scaffold(
+            task=request.task,
+            language=request.language,
+            max_files=request.max_files,
+        )
+    except ProjectBundleError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    result["generation_engine"] = "swin_local_templates"
+    result["elapsed_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+    result["agent_plan"] = [
+        {"name": step.name, "purpose": step.purpose, "tool": step.tool}
+        for step in plan_task(request.task, request.response_language)
+    ]
+    chat_history.save_turn(
+        int(user["id"]),
+        request.session_id,
+        request.task.strip(),
+        (
+            f"[SWIN LOCAL SCAFFOLD] {result['project_name']} — "
+            f"{result['file_count']} файлов. {result['summary']}"
+        )[:120000],
     )
+    return result
 
 
 @app.get("/memory/facts")
