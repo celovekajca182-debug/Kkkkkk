@@ -1164,6 +1164,7 @@ class MainActivity : Activity() {
                             .setPositiveButton("Удалить") { _, _ ->
                                 try {
                                     store.deleteFile(projectId, fileId)
+                                    dialog.dismiss()
                                     showProjectFiles(projectId)
                                 } catch (error: Exception) {
                                     Toast.makeText(this@MainActivity, error.message, Toast.LENGTH_LONG).show()
