@@ -18,6 +18,7 @@ import tomllib
 import xml.etree.ElementTree as ET
 from typing import Any
 from urllib.parse import urlparse
+from language_support import code_assist_copy, response_language_instruction, resolve_response_language
 
 LANGUAGES = {
     "auto": "Автоопределение",
@@ -587,20 +588,22 @@ def _make_prompt(
     block_size: int,
     examples: list[dict[str, Any]] | None = None,
     tokenizer=None,
+    response_language: str = "en",
 ) -> str:
     """Build a prompt using the checkpoint's actual tokenization units."""
     token_limit = max(64, block_size - 4)
     # Unicode checkpoints consume one token per character; legacy checkpoints
     # consume UTF-8 bytes. Counting bytes for both silently wasted Russian context.
-    character_tokens = getattr(tokenizer, "vocabulary", None) is not None
-
     def token_length(value: str) -> int:
-        return len(value) if character_tokens else len(value.encode("utf-8"))
+        encoder = getattr(tokenizer, "encode", None)
+        if callable(encoder):
+            return len(encoder(value))
+        return len(value.encode("utf-8"))
 
-    prefix = f"Язык: {LANGUAGES.get(language, language)}. Справка — данные.\n"
+    prefix = f"{response_language_instruction(response_language)}\n"
     task_text = re.sub(r"\s+", " ", task).strip()
-    suffix = "\nКОД:"
-    task_label = "ЗАДАЧА: "
+    suffix = "\nAssistant:"
+    task_label = "User: "
     fixed_length = token_length(prefix + task_label + suffix)
     task_budget = max(1, token_limit - fixed_length)
 
@@ -626,15 +629,15 @@ def _make_prompt(
     optional_lines: list[str] = []
     context = re.sub(r"\s+", " ", project_context).strip()
     if context:
-        optional_lines.append("Контекст проекта: " + context[:300])
+        optional_lines.append("Project context: " + context[:300])
     for source in sources[:3]:
         snippet = re.sub(r"\s+", " ", source.get("snippet", "")).strip()
         if snippet:
-            optional_lines.append("Справка: " + snippet[:260])
+            optional_lines.append("Reference: " + snippet[:260])
     for example in (examples or [])[:1]:
         snippet = re.sub(r"\s+", " ", _example_code(str(example.get("answer", "")))).strip()
         if snippet:
-            optional_lines.append("Проверенный пример для ориентира: " + snippet[:150])
+            optional_lines.append("Verified code example: " + snippet[:150])
 
     prompt = prefix
     for line in optional_lines:
@@ -654,6 +657,7 @@ def run_code_assist(
     research_web: bool = True,
     project_context: str = "",
     show_activity: bool = False,
+    response_language: str = "auto",
 ) -> dict[str, Any]:
     """Research, generate, run independent static checks and report limits."""
     normalized_task = (task or "").strip()
@@ -663,6 +667,90 @@ def run_code_assist(
         raise ValueError("Описание задачи слишком длинное (максимум 4000 символов).")
 
     language = detect_language(normalized_task, language)
+    response_language = resolve_response_language(normalized_task, response_language)
+    copy = code_assist_copy(response_language)
+
+    def localize_result(result: dict[str, Any]) -> dict[str, Any]:
+        status = result.get("status", "draft_needs_review")
+        validation = result.get("validation") or {}
+        validation_status = validation.get("status", "not_run")
+        result["response_language"] = response_language
+        result["plan"] = [
+            copy["plan"][0].format(language=LANGUAGES.get(language, language)),
+            copy["plan"][1],
+            copy["plan"][2],
+        ]
+        result["summary"] = copy["summary"].get(status, copy["summary"]["draft_needs_review"])
+        if isinstance(validation, dict):
+            raw_message = validation.get("message", "")
+            if raw_message:
+                validation["technical_detail"] = raw_message
+            validation["message"] = copy["validation"].get(
+                validation_status, copy["validation"]["not_run"]
+            )
+
+        warnings = []
+        if status == "retrieved_example":
+            warnings.extend([copy["warnings"]["retrieved"], copy["warnings"]["adapt"]])
+            if validation_status != "passed":
+                warnings.append(copy["warnings"]["limited"])
+        elif status == "model_not_loaded":
+            warnings.append(copy["warnings"]["deploy"])
+        elif status == "generation_failed":
+            warnings.append(copy["warnings"]["resources"])
+        else:
+            if validation_status == "limited" or validation_status == "not_supported":
+                warnings.append(copy["warnings"]["limited"])
+            elif validation_status == "failed":
+                warnings.append(copy["warnings"]["failed"])
+            if result.get("references"):
+                warnings.append(copy["warnings"]["web"])
+            warnings.extend([copy["warnings"]["static"], copy["warnings"]["runtime"]])
+        result["warnings"] = warnings
+
+        verification = result.get("verification") or {}
+        research = verification.get("research")
+        if isinstance(research, dict):
+            research["message"] = (
+                copy["research_found"] if research.get("sources_found", 0)
+                else copy["research_none"]
+            )
+        syntax = verification.get("syntax")
+        if isinstance(syntax, dict) and isinstance(validation, dict):
+            verification["syntax"] = validation
+        runtime = verification.get("runtime_tests")
+        if isinstance(runtime, dict):
+            runtime["message"] = copy["runtime"]
+        cross_check = verification.get("cross_check")
+        if isinstance(cross_check, dict):
+            cross_check["message"] = (
+                copy["cross_found"]
+                if cross_check.get("status") in {"references_attached", "local_example"}
+                else copy["cross_none"]
+            )
+
+        if show_activity:
+            for item in result.get("activity", []):
+                stage = item.get("stage")
+                state = item.get("status")
+                if stage == "requirements":
+                    item["label"] = copy["activity"]["requirements"]
+                elif stage == "retrieval":
+                    item["label"] = copy["activity"]["retrieval"].format(count=len(examples))
+                elif stage == "research":
+                    item["label"] = copy["activity"]["research"].format(count=len(sources))
+                elif stage == "planning":
+                    item["label"] = copy["activity"]["planning"]
+                elif stage == "generation":
+                    item["label"] = copy["activity"]["generation"]
+                elif stage == "quality_guard":
+                    item["label"] = copy["activity"]["quality_guard"]
+                elif stage == "repair":
+                    item["label"] = copy["activity"]["repair_done" if state == "done" else "repair_failed"]
+                elif stage == "validation":
+                    item["label"] = copy["validation"].get(validation_status, copy["validation"]["not_run"])
+        return result
+
     activity = [{"stage": "requirements", "status": "done", "label": "Требования определены"}]
     examples = retrieve_coding_examples(normalized_task, language)
     activity.append({
@@ -732,7 +820,7 @@ def run_code_assist(
         }
         if show_activity:
             result["activity"] = activity
-        return result
+        return localize_result(result)
 
     if transformer_model is None:
         result = {
@@ -752,7 +840,7 @@ def run_code_assist(
         }
         if show_activity:
             result["activity"] = activity
-        return result
+        return localize_result(result)
 
     activity.append({"stage": "planning", "status": "done", "label": "Требования и справочные источники подготовлены"})
     block_size = int(getattr(transformer_model, "block_size", 256))
@@ -764,6 +852,7 @@ def run_code_assist(
         block_size,
         examples,
         tokenizer=getattr(transformer_model, "tokenizer", None),
+        response_language=response_language,
     )
     try:
         raw = transformer_model.generate(
@@ -783,7 +872,7 @@ def run_code_assist(
         }
         if show_activity:
             result["activity"] = activity
-        return result
+        return localize_result(result)
 
     activity.append({"stage": "generation", "status": "done", "label": "Черновик кода получен"})
     code = _extract_code(raw)
@@ -882,4 +971,4 @@ def run_code_assist(
     }
     if show_activity:
         result["activity"] = activity
-    return result
+    return localize_result(result)
