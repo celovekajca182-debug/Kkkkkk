@@ -32,7 +32,7 @@ jobs:
           while IFS= read -r path; do
             [ -z "$path" ] && continue
             case "$path" in
-              README.md|docs/*|server/data/DATASET_SOURCES.md|server/app.py|server/coding_agent.py|server/transformer.py|server/evaluate_transformer.py|tests/*|android/**|.github/workflows/android-apk.yml|.github/workflows/promote-trained-model.yml)
+              README.md|docs/*|server/data/DATASET_SOURCES.md|server/app.py|server/assistant_core.py|server/knowledge.py|server/vision.py|server/coding_agent.py|server/transformer.py|server/evaluate_transformer.py|tests/*|android/**|.github/workflows/android-apk.yml|.github/workflows/promote-trained-model.yml)
                 ;;
               *)
                 echo "Training inputs or code changed after this run: $path" >&2
@@ -57,11 +57,15 @@ jobs:
           EVALUATION="$(find artifact -type f -name 'evaluation.json' -print -quit)"
           MANIFEST="$(find artifact -type f -name 'dataset_manifest.json' -print -quit)"
           MBPP_MANIFEST="$(find artifact -type f -name 'mbpp_manifest.json' -print -quit)"
+          FINEWIKI="$(find artifact -type f -name 'finewiki_ru_train.txt' -print -quit)"
           test -n "$CHECKPOINT"
           test -n "$EVALUATION"
           test -n "$MANIFEST"
           test -n "$MBPP_MANIFEST"
+          test -n "$FINEWIKI"
           test -s "$CHECKPOINT"
+          test -s "$FINEWIKI"
+          test "$(wc -c < "$FINEWIKI")" -le 33554432
           python - "$EVALUATION" "$MANIFEST" "$MBPP_MANIFEST" <<'PY'
           import json
           import sys
@@ -90,6 +94,7 @@ jobs:
           print("Validated the ten OASST1 languages, seven additional FineWeb2 languages and the multilingual quality gate.")
           PY
           echo "checkpoint=$CHECKPOINT" >> "$GITHUB_OUTPUT"
+          echo "finewiki=$FINEWIKI" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-python@v5
         with:
@@ -116,8 +121,10 @@ jobs:
 
             Sources: Russian + seven additional FineWeb2-HQ languages, Russian FineWiki / Wikipedia, ten OASST1 chat languages, local project examples and MBPP Python tasks.
 
-            The candidate was re-evaluated with the current main-branch quality gate before promotion. Original and current evaluation reports, plus dataset manifests, are available in the originating workflow artifact or promotion logs. FineWiki source attribution and licenses are documented in server/data/DATASET_SOURCES.md.
-          files: ${{ steps.verify.outputs.checkpoint }}
+            The candidate was re-evaluated with the current main-branch quality gate before promotion. The prepared Russian FineWiki/Wikipedia corpus is published alongside the checkpoint for runtime retrieval-augmented answers. Original/current evaluation reports and dataset manifests are available in the originating workflow artifact. FineWiki attribution and license notices are documented in server/data/DATASET_SOURCES.md.
+          files: |
+            ${{ steps.verify.outputs.checkpoint }}
+            ${{ steps.verify.outputs.finewiki }}
           overwrite_files: true
           fail_on_unmatched_files: true
           make_latest: false
