@@ -4,7 +4,7 @@ import unittest
 import torch
 from pathlib import Path
 
-from transformer import CharTokenizer
+from transformer import BPEByteTokenizer, CharTokenizer
 
 from train_transformer import (
     build_instruction_corpus,
@@ -101,6 +101,18 @@ class TrainingCorpusTests(unittest.TestCase):
         windows = build_sft_windows([(prompt, answer)], tokenizer, block_size=64)
         self.assertGreaterEqual(len(windows), 3)
         self.assertTrue(all(torch.any(targets != -100) for _, targets in windows))
+
+    def test_sft_bpe_windows_include_eos_and_mask_prompt_tokens(self):
+        prompt = "Пользователь: Напиши функцию Python."
+        answer = "def add(a, b):\n    return a + b"
+        corpus = (prompt + "\nSWIN: " + answer + "\n") * 80
+        tokenizer = BPEByteTokenizer.from_texts([corpus], vocab_size=512)
+        windows = build_sft_windows([(prompt, answer)], tokenizer, block_size=64)
+        self.assertTrue(windows)
+        self.assertTrue(any(torch.any(targets == tokenizer.eos_token_id) for _, targets in windows))
+        _, targets = windows[0]
+        prompt_count = len(tokenizer.encode(prompt + "\nSWIN:"))
+        self.assertTrue(torch.all(targets[:max(0, prompt_count - 1)] == -100))
 
     def test_instruction_examples_are_deduplicated_and_keep_prompt_answer_separate(self):
         with tempfile.TemporaryDirectory() as directory:
