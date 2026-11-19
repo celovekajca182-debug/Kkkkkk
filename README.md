@@ -212,3 +212,13 @@ Local Agent использует архитектурные идеи REA: отд
 Следующие инженерные шаги: увеличить качественные multilingual/code выборки, добавить тестирование алгоритмов и runtime sandbox, затем оценить более крупный открытый checkpoint и длительное обучение на GPU.
 
 SWIN AI может помогать с программированием, отладкой, своими играми, офлайн-моддингом и разрешёнными модификациями. Для собственной игры поддерживаются debug-инструменты, тестовые режимы и офлайн-трейнеры; обход античита и вмешательство в чужие онлайн-матчи не входят в проект.
+
+
+## Dual Qwen model routing
+
+Runtime inference is split by task: [Qwen3-4B-Instruct-2507](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) handles general chat, explanations and reasoning, while [Qwen2.5-Coder-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct) handles code generation and repair. Both model IDs can be overridden through environment variables.
+
+The Android APK and the Render API do not contain these model weights. Configure an OpenAI-compatible GPU inference gateway using `SWIN_LLM_BASE_URL` and `SWIN_LLM_API_KEY`; see [.env.example](.env.example) and [docs/model-routing.md](docs/model-routing.md). The Qwen routes activate when the base URL is set. Otherwise, SWIN retains its existing local checkpoint/retrieval fallback.
+
+The existing `/code/assist` validation remains in place: generated code is statically checked and is not executed by the API. The provider key stays server-side and is never sent to the Android app.
+
