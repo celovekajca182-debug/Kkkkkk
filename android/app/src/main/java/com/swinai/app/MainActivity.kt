@@ -1278,6 +1278,140 @@ class MainActivity : Activity() {
             }.show()
     }
 
+    private fun showProjectGenerator() {
+        if (authToken.isNullOrBlank()) {
+            Toast.makeText(this, "Сначала войди в SWIN AI.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(chatDp(20), chatDp(8), chatDp(20), chatDp(2))
+        }
+        val taskInput = EditText(this).apply {
+            hint = "Опиши приложение, игру, сайт или инструмент. Укажи функции и платформу…"
+            setTextColor(chatColor("ink"))
+            setHintTextColor(chatColor("muted"))
+            textSize = 14f
+            minLines = 5
+            maxLines = 9
+            gravity = Gravity.TOP or Gravity.START
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setPadding(chatDp(12), chatDp(10), chatDp(12), chatDp(10))
+            background = chatBg(chatColor("panel"), 11, chatColor("stroke"))
+        }
+        panel.addView(taskInput, LinearLayout.LayoutParams(-1, chatDp(150)))
+        panel.addView(makeText(
+            "SWIN создаст до 12 исходных файлов, проверит безопасные пути и доступный синтаксис. Запуск проекта не выполняется.",
+            11f,
+            chatColor("muted")
+        ).apply {
+            setPadding(0, chatDp(8), 0, chatDp(5))
+        })
+        val options = listOf("Автоопределение" to "auto") + workspaceLanguages()
+        val spinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_item,
+                options.map { it.first }
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            setSelection(0)
+            background = chatBg(chatColor("panel"), 10, chatColor("stroke"))
+        }
+        panel.addView(spinner, LinearLayout.LayoutParams(-1, chatDp(48)))
+        val dialog = dialogBuilder()
+            .setTitle("Генератор полного проекта")
+            .setView(panel)
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Создать проект", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val task = taskInput.text.toString().trim()
+                if (task.length < 10) {
+                    taskInput.error = "Опиши проект подробнее."
+                    return@setOnClickListener
+                }
+                val token = authToken
+                if (token.isNullOrBlank()) {
+                    taskInput.error = "Сессия истекла. Войди снова."
+                    return@setOnClickListener
+                }
+                val language = options.getOrNull(spinner.selectedItemPosition)?.second ?: "auto"
+                val payload = JSONObject()
+                    .put("task", task)
+                    .put("language", language)
+                    .put("response_language", selectedResponseLanguage)
+                    .put("project_context", selectedProjectContext)
+                    .put("session_id", sessionId)
+                    .put("max_files", 12)
+                dialog.dismiss()
+                val progress = ProgressDialog(this).apply {
+                    setMessage("SWIN проектирует файлы и проверяет исходники…")
+                    setCancelable(false)
+                    show()
+                }
+                thread {
+                    try {
+                        val response = requestJson("/code/project", payload, token)
+                        val source = response.optJSONArray("files")
+                            ?: throw IllegalStateException("Сервер не вернул файлы проекта.")
+                        if (source.length() !in 1..20) {
+                            throw IllegalStateException("Сервер вернул недопустимое количество файлов.")
+                        }
+                        val importFiles = ArrayList<JSONObject>()
+                        for (index in 0 until source.length()) {
+                            val file = source.optJSONObject(index)
+                                ?: throw IllegalStateException("Повреждена запись файла №${index + 1}.")
+                            val name = file.optString("path")
+                            val content = file.optString("content")
+                            if (name.isBlank() || content.isBlank()) {
+                                throw IllegalStateException("Файл №${index + 1} не содержит имени или исходника.")
+                            }
+                            importFiles.add(
+                                JSONObject()
+                                    .put("name", name)
+                                    .put("language", file.optString("language", guessWorkspaceLanguage(name)))
+                                    .put("content", content)
+                            )
+                        }
+                        val projectName = response.optString("project_name", "SWIN Project")
+                        runOnUiThread {
+                            try {
+                                val store = workspaceStore()
+                                    ?: throw IllegalStateException("Локальное рабочее пространство недоступно.")
+                                val saved = store.importProject(projectName, importFiles)
+                                progress.dismiss()
+                                val validation = response.optJSONObject("validation")
+                                val warning = validation?.optString("message").orEmpty()
+                                Toast.makeText(
+                                    this,
+                                    "Создан проект «${saved.optString("name")}»: ${importFiles.size} файлов. $warning",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                showProjectFiles(saved.optString("id"))
+                            } catch (error: Exception) {
+                                progress.dismiss()
+                                Toast.makeText(this, "Не удалось сохранить проект: ${error.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread {
+                            progress.dismiss()
+                            Toast.makeText(
+                                this,
+                                "Генерация не завершена: ${error.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }
+            }
+        }
+        dialog.show()
+    }
+
     private fun workspaceStore(): WorkspaceStore? {
         if (userEmail.isBlank()) {
             Toast.makeText(this, "Сначала войди в аккаунт.", Toast.LENGTH_SHORT).show()
@@ -1326,6 +1460,18 @@ class MainActivity : Activity() {
         })
         root.addView(workspaceActions, LinearLayout.LayoutParams(-1, chatDp(46)).apply {
             topMargin = chatDp(12)
+        })
+        val generateProjectButton = TextView(this).apply {
+            text = "✦  Создать полный проект с SWIN"
+            gravity = Gravity.CENTER
+            textSize = 13f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(chatColor("accent"))
+            background = chatBg(chatColor("panel"), 11, chatColor("stroke"))
+            setOnClickListener { showProjectGenerator() }
+        }
+        root.addView(generateProjectButton, LinearLayout.LayoutParams(-1, chatDp(46)).apply {
+            topMargin = chatDp(8)
         })
         val search = makeEdit("Найти проект…", InputType.TYPE_CLASS_TEXT).apply {
             background = chatBg(chatColor("panel"), 11, chatColor("stroke"))
