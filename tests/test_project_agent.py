@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from project_agent import ProjectBundleError, _safe_relative_path, build_project_prompt, generate_project_bundle
+from project_agent import ProjectBundleError, _safe_relative_path, build_project_prompt, generate_project_bundle, generate_local_project_scaffold
 
 
 class ProjectAgentTests(unittest.TestCase):
