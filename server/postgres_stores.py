@@ -293,12 +293,18 @@ def migrate_sqlite_to_postgres(sqlite_path: str | Path, database_url: str) -> di
     source = sqlite3.connect(str(source_path), timeout=15)
     source.row_factory = sqlite3.Row
     try:
-        old_users = source.execute(
-            "SELECT id, email, password_hash, created_at FROM users ORDER BY id"
-        ).fetchall()
-        old_tokens = source.execute(
-            "SELECT token_hash, user_id, expires_at, created_at FROM auth_tokens"
-        ).fetchall()
+        try:
+            old_users = source.execute(
+                "SELECT id, email, password_hash, created_at FROM users ORDER BY id"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            old_users = []
+        try:
+            old_tokens = source.execute(
+                "SELECT token_hash, user_id, expires_at, created_at FROM auth_tokens"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            old_tokens = []
         try:
             old_messages = source.execute(
                 """
