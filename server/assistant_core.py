@@ -85,50 +85,8 @@ def _source_rank(url: str) -> tuple[int, str, str]:
 
 
 def search_web(query: str, max_results: int = 6) -> list[dict[str, str]]:
-    """Search public web snippets; gracefully return [] when DDGS is unavailable."""
-    text_query = re.sub(r"\s+", " ", (query or "")).strip()[:500]
-    if len(text_query) < 3:
-        return []
-    try:
-        from ddgs import DDGS
-        client = DDGS(timeout=8)
-        raw = client.text(
-            text_query,
-            region="wt-wt",
-            safesearch="moderate",
-            max_results=max(1, min(int(max_results) * 3, 18)),
-            backend="auto",
-        )
-    except Exception:
-        return []
-
-    ranked: list[tuple[int, int, dict[str, str]]] = []
-    seen: set[str] = set()
-    for position, item in enumerate(raw or []):
-        if not isinstance(item, dict):
-            continue
-        url = str(item.get("href", "")).strip()
-        if not is_safe_public_url(url):
-            continue
-        parsed = urlparse(url)
-        canonical = (_host(url) + parsed.path.rstrip("/")).casefold()
-        if canonical in seen:
-            continue
-        seen.add(canonical)
-        rank, trust, label = _source_rank(url)
-        title = re.sub(r"\s+", " ", str(item.get("title", "")).strip())[:180]
-        snippet = re.sub(r"\s+", " ", str(item.get("body", "")).strip())[:700]
-        if not title:
-            title = _host(url) or "Источник"
-        ranked.append((rank, -position, {
-            "title": title,
-            "url": url[:700],
-            "snippet": snippet,
-            "trust": trust,
-            "source_type": label,
-        }))
-    ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
-    return [row[2] for row in ranked[:max(1, min(int(max_results), 8))]]
+    """Remote search is intentionally disabled in the local-only SWIN runtime."""
+    return []
 
 
 def build_search_queries(message: str) -> list[str]:
