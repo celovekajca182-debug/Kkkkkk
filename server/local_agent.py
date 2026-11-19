@@ -218,8 +218,9 @@ def capability_report() -> dict[str, Any]:
         "evidence_ledger": True,
         "knowledge_retrieval": True,
         "code_static_validation": True,
-        "multi_file_project_generation": False,
-        "reasoning_weights": "experimental_local_checkpoint",
+        "multi_file_project_scaffolding": True,
+        "multi_file_llm_generation": False,
+        "reasoning_weights": "experimental_local_checkpoint_not_quality_gated",
         "vision": {
             "enabled": False,
             "reason": "В локальной сборке нет установленной мультимодальной модели.",
