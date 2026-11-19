@@ -580,21 +580,21 @@ class MainActivity : Activity() {
     private fun chatColor(key: String): Int {
         val dark = isDarkTheme()
         return when (key) {
-            "background" -> if (dark) Color.rgb(16, 20, 18) else Color.rgb(247, 248, 245)
-            "panel" -> if (dark) Color.rgb(27, 33, 29) else Color.rgb(255, 255, 253)
-            "ink" -> if (dark) Color.rgb(238, 242, 237) else Color.rgb(33, 40, 35)
-            "muted" -> if (dark) Color.rgb(158, 171, 161) else Color.rgb(111, 121, 113)
-            "accent" -> if (dark) Color.rgb(190, 224, 132) else Color.rgb(75, 125, 85)
-            "stroke" -> if (dark) Color.rgb(54, 66, 57) else Color.rgb(222, 229, 219)
-            "assistantBubble" -> if (dark) Color.rgb(27, 33, 29) else Color.rgb(255, 255, 253)
-            "userBubble" -> if (dark) Color.rgb(40, 53, 43) else Color.rgb(234, 242, 231)
-            "codeBubble" -> if (dark) Color.rgb(20, 26, 22) else Color.rgb(240, 244, 239)
-            "codePill" -> if (dark) Color.rgb(39, 53, 42) else Color.rgb(232, 242, 229)
-            "composerHint" -> if (dark) Color.rgb(160, 172, 162) else Color.rgb(143, 151, 143)
-            "sendText" -> if (dark) Color.rgb(21, 29, 22) else Color.WHITE
-            "assistantLabel" -> if (dark) Color.rgb(194, 220, 160) else Color.rgb(83, 126, 88)
-            "userLabel" -> if (dark) Color.rgb(188, 217, 169) else Color.rgb(83, 126, 88)
-            "success" -> if (dark) Color.rgb(166, 215, 137) else Color.rgb(61, 129, 78)
+            "background" -> if (dark) Color.rgb(18, 19, 22) else Color.rgb(247, 245, 241)
+            "panel" -> if (dark) Color.rgb(28, 29, 34) else Color.rgb(255, 255, 253)
+            "ink" -> if (dark) Color.rgb(239, 238, 236) else Color.rgb(39, 38, 35)
+            "muted" -> if (dark) Color.rgb(158, 158, 164) else Color.rgb(119, 115, 107)
+            "accent" -> if (dark) Color.rgb(226, 178, 125) else Color.rgb(156, 101, 55)
+            "stroke" -> if (dark) Color.rgb(55, 56, 63) else Color.rgb(226, 222, 214)
+            "assistantBubble" -> if (dark) Color.rgb(28, 29, 34) else Color.rgb(255, 255, 253)
+            "userBubble" -> if (dark) Color.rgb(48, 42, 37) else Color.rgb(246, 238, 227)
+            "codeBubble" -> if (dark) Color.rgb(20, 21, 25) else Color.rgb(243, 241, 237)
+            "codePill" -> if (dark) Color.rgb(49, 41, 35) else Color.rgb(247, 239, 229)
+            "composerHint" -> if (dark) Color.rgb(153, 153, 160) else Color.rgb(139, 133, 124)
+            "sendText" -> if (dark) Color.rgb(31, 26, 22) else Color.WHITE
+            "assistantLabel" -> if (dark) Color.rgb(225, 184, 142) else Color.rgb(149, 99, 60)
+            "userLabel" -> if (dark) Color.rgb(213, 177, 142) else Color.rgb(126, 86, 54)
+            "success" -> if (dark) Color.rgb(151, 202, 157) else Color.rgb(61, 129, 78)
             "danger" -> if (dark) Color.rgb(235, 135, 126) else Color.rgb(190, 67, 61)
             "syntaxKeyword" -> if (dark) Color.rgb(196, 167, 255) else Color.rgb(112, 75, 174)
             "syntaxString" -> if (dark) Color.rgb(174, 215, 145) else Color.rgb(48, 125, 75)
@@ -675,7 +675,7 @@ class MainActivity : Activity() {
             background = if (user) chatBg(chatColor("userBubble"), 17)
                 else chatBg(chatColor("assistantBubble"), 16, chatColor("stroke"))
         }
-        val tag = makeText(if (user) "ВЫ" else "SWIN", 10f,
+        val tag = makeText(if (user) "ВЫ" else "SWIN AI", 10f,
             if (user) chatColor("userLabel") else chatColor("assistantLabel")).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             letterSpacing = 0.12f
@@ -2468,20 +2468,32 @@ class MainActivity : Activity() {
     ): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(chatDp(13), chatDp(13), chatDp(13), chatDp(13))
-            background = chatBg(chatColor("panel"), 15, chatColor("stroke"))
+            setPadding(chatDp(14), chatDp(14), chatDp(14), chatDp(13))
+            background = chatBg(chatColor("panel"), 18, chatColor("stroke"))
             isClickable = true
             isFocusable = true
+            minimumHeight = chatDp(124)
+            elevation = chatDp(1).toFloat()
             setOnClickListener { action() }
         }
-        card.addView(makeText(icon, 20f, chatColor("accent")).apply {
+        val iconTile = TextView(this).apply {
+            text = icon
+            textSize = 18f
+            gravity = Gravity.CENTER
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        })
+            setTextColor(chatColor("accent"))
+            background = chatBg(chatColor("codePill"), 11)
+        }
+        card.addView(iconTile, LinearLayout.LayoutParams(chatDp(36), chatDp(36)))
         card.addView(makeText(title, 14f, chatColor("ink")).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setPadding(0, chatDp(7), 0, chatDp(2))
+            setPadding(0, chatDp(10), 0, chatDp(3))
+            maxLines = 2
         })
-        card.addView(makeText(description, 11f, chatColor("muted")))
+        card.addView(makeText(description, 11f, chatColor("muted")).apply {
+            setLineSpacing(chatDp(2).toFloat(), 1f)
+            maxLines = 2
+        })
         return card
     }
 
@@ -2503,54 +2515,60 @@ class MainActivity : Activity() {
         welcomePanel?.let { (it.parent as? ViewGroup)?.removeView(it) }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(chatDp(4), chatDp(28), chatDp(4), chatDp(20))
+            setPadding(chatDp(3), chatDp(30), chatDp(3), chatDp(22))
         }
-        val mark = TextView(this).apply {
-            text = "S"
-            textSize = 22f
-            gravity = Gravity.CENTER
+        panel.addView(makeText("SWIN AI  /  WORKSPACE", 10f, chatColor("accent")).apply {
+            letterSpacing = 0.15f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        })
+        panel.addView(makeText("Думай глубже.\nСоздавай точнее.", 27f, chatColor("ink")).apply {
             typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            setTextColor(chatColor("sendText"))
-            background = chatBg(chatColor("accent"), 17)
-        }
-        panel.addView(mark, LinearLayout.LayoutParams(chatDp(48), chatDp(48)))
-        panel.addView(makeText("Привет, я SWIN AI", 25f, chatColor("ink")).apply {
-            typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            setPadding(0, chatDp(16), 0, chatDp(5))
+            setLineSpacing(chatDp(2).toFloat(), 1f)
+            setPadding(0, chatDp(9), 0, chatDp(8))
         })
         panel.addView(makeText(
-            "Твой помощник для поиска информации, программирования и разбора сложных задач.",
+            "Рабочее пространство для сложной математики, разработки и технических исследований.",
             14f,
             chatColor("muted")
         ).apply {
             setLineSpacing(chatDp(3).toFloat(), 1f)
             setPadding(0, 0, 0, chatDp(20))
         })
+
         val firstRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
         firstRow.addView(quickActionCard(
-            "⌕", "Найти информацию", "Поиск в интернете и источники"
-        ) { focusComposer("Найди актуальную информацию о ") },
+            "∑", "Сложная математика", "Алгебра, анализ и доказательства"
+        ) { focusComposer("Реши задачу подробно. Обоснуй каждый шаг, проверь вычисления и выдели итоговый ответ:\n") },
             LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = chatDp(7) })
         firstRow.addView(quickActionCard(
-            "</>", "Написать код", "Python, Godot и другие языки"
-        ) { focusComposer("Помоги написать код для Godot 4: ", coding = true) },
+            "</>", "Написать код", "Python, GDScript, Kotlin и C++"
+        ) { focusComposer("Разработай решение как опытный инженер. Укажи архитектуру, полный код и тесты:\n", coding = true) },
             LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = chatDp(7) })
         panel.addView(firstRow)
+
         val secondRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
         secondRow.addView(quickActionCard(
-            "✦", "Объяснить тему", "Понятно и по шагам"
-        ) { focusComposer("Объясни простыми словами: ") },
+            "⌘", "Найти ошибку", "Разбор причины и исправление"
+        ) { focusComposer("Проанализируй ошибку. Найди первопричину, предложи исправление и тест для проверки:\n", coding = true) },
             LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = chatDp(7) })
         secondRow.addView(quickActionCard(
-            "▤", "Моя память", "Посмотреть сохранённые факты"
-        ) { showMemorySettings() },
+            "∷", "Разобрать концепцию", "Алгоритмы, формулы и системы"
+        ) { focusComposer("Объясни эту концепцию технически точно, с формулами и примером:\n") },
             LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = chatDp(7) })
         panel.addView(secondRow, LinearLayout.LayoutParams(-1, -2).apply {
-            topMargin = chatDp(12)
+            topMargin = chatDp(11)
+        })
+
+        panel.addView(makeText(
+            "История диалогов, память и проекты доступны в меню.",
+            11f,
+            chatColor("muted")
+        ).apply {
+            setPadding(chatDp(2), chatDp(17), 0, 0)
         })
         chatMessages.addView(panel, LinearLayout.LayoutParams(-1, -2))
         welcomePanel = panel
@@ -2600,7 +2618,7 @@ class MainActivity : Activity() {
         brandCopy.addView(makeText("SWIN AI", 18f, ink).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         })
-        brandCopy.addView(makeText("Личный помощник · Русский", 10f, muted))
+        brandCopy.addView(makeText("Математика · Код · Исследования", 10f, muted))
         brand.addView(brandCopy)
         brand.isClickable = true
         brand.isFocusable = true
@@ -3133,7 +3151,7 @@ class MainActivity : Activity() {
             sendButton.contentDescription = if (isCodeMode) "Создать код" else "Отправить"
         }
         if (::chatInput.isInitialized) chatInput.hint =
-            if (isCodeMode) "Опишите задачу для кода…" else "Напишите сообщение…"
+            if (isCodeMode) "Опишите задачу для кода…" else "Задайте сложный вопрос или опишите задачу…"
         codeModeHeader?.text = if (isCodeMode) "Код ✓" else "Код"
     }
 
