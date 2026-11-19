@@ -1,0 +1,66 @@
+name: Publish SWIN Wikipedia retrieval corpus
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "server/prepare_wikipedia_corpus.py"
+      - "server/prepare_corpus.py"
+      - ".github/workflows/publish-wikipedia-corpus.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: swin-wikipedia-corpus
+  cancel-in-progress: true
+
+jobs:
+  prepare-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install open dataset reader
+        run: python -m pip install "datasets==3.3.2"
+
+      - name: Build attributed Russian FineWiki corpus
+        run: |
+          python server/prepare_wikipedia_corpus.py \
+            --documents 1500 \
+            --max-chars 900000 \
+            --max-doc-chars 2500 \
+            --output server/data/finewiki_ru_train.txt
+
+      - name: Verify corpus before publishing
+        run: |
+          test -s server/data/finewiki_ru_train.txt
+          test "$(wc -c < server/data/finewiki_ru_train.txt)" -le 33554432
+          grep -q "<|document|>" server/data/finewiki_ru_train.txt
+          head -n 2 server/data/finewiki_ru_train.txt
+
+      - name: Publish the runtime retrieval corpus
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: swin-wikipedia-latest
+          name: SWIN Wikipedia retrieval corpus
+          target_commitish: ${{ github.sha }}
+          body: |
+            Capped Russian FineWiki / Wikipedia text corpus used by SWIN's retrieval-augmented chat.
+
+            Source: HuggingFaceFW/finewiki, ru config; upstream Russian Wikipedia.
+            Attribution: Wikipedia contributors; FineWiki by HuggingFaceFW/FineData.
+            License: CC BY-SA 4.0; GFDL also applies to relevant upstream contributions.
+            Prepared file: finewiki_ru_train.txt. This dataset asset is published independently of model checkpoint evaluation.
+          files: server/data/finewiki_ru_train.txt
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          make_latest: false
