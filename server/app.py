@@ -14,14 +14,32 @@ from pydantic import BaseModel, Field
 from auth import AuthStore, TOKEN_TTL_SECONDS, validate_email
 from chat_history import ChatHistoryStore
 from coding_agent import run_code_assist
+from postgres_stores import (
+    PostgresAuthStore,
+    PostgresChatHistoryStore,
+    migrate_sqlite_to_postgres,
+)
 from knowledge import KnowledgeBase
 from model import TinyCharRNN
 
 app = FastAPI(title="SWIN AI", version="0.6.0")
 
 database_path = Path(os.getenv("SWIN_DATABASE_PATH", "data/swin.sqlite3"))
-auth_store = AuthStore(database_path)
-chat_history = ChatHistoryStore(database_path)
+database_url = os.getenv("DATABASE_URL", "").strip()
+if database_url:
+    auth_store = PostgresAuthStore(database_url)
+    chat_history = PostgresChatHistoryStore(database_url)
+    migration_result = migrate_sqlite_to_postgres(database_path, database_url)
+    print(
+        "SWIN PostgreSQL stores enabled; legacy SQLite rows copied: "
+        f"users={migration_result['users']}, "
+        f"tokens={migration_result['tokens']}, "
+        f"messages={migration_result['messages']}"
+    )
+else:
+    auth_store = AuthStore(database_path)
+    chat_history = ChatHistoryStore(database_path)
+    print("SWIN SQLite stores enabled; set DATABASE_URL for durable cross-device memory.")
 bearer_scheme = HTTPBearer(auto_error=False)
 
 rnn_model = None
