@@ -9,7 +9,7 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from auth import AuthStore, TOKEN_TTL_SECONDS, validate_email
 from assistant_core import (
@@ -281,6 +281,13 @@ class SyncMemoryRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=80)
     messages: list[HistoryMessage] = Field(default_factory=list, max_length=80)
 
+    @model_validator(mode="after")
+    def enforce_total_payload_limit(self):
+        total_chars = sum(len(message.content) for message in self.messages)
+        if total_chars > 250_000:
+            raise ValueError("Резервная копия истории слишком большая: максимум 250 000 символов.")
+        return self
+
 class MemoryFactRequest(BaseModel):
     value: str = Field(min_length=1, max_length=500)
     category: Literal["note", "project", "preference"] | None = None
@@ -307,6 +314,13 @@ def enforce_rate_limit_key(
     """Apply a small in-process sliding-window limit to a stable identity key."""
     now = time.monotonic()
     with _auth_attempts_lock:
+        # Bound memory even if many short-lived IP/account identifiers appear.
+        if key not in _auth_attempts and len(_auth_attempts) >= 4096:
+            for stale_key, stale_attempts in list(_auth_attempts.items()):
+                if not stale_attempts or now - stale_attempts[-1] >= window_seconds:
+                    _auth_attempts.pop(stale_key, None)
+            while len(_auth_attempts) >= 4096:
+                _auth_attempts.pop(next(iter(_auth_attempts)))
         attempts = _auth_attempts[key]
         while attempts and now - attempts[0] >= window_seconds:
             attempts.popleft()
@@ -565,6 +579,7 @@ def sync_memory(
     user: dict = Depends(get_current_user),
 ):
     """Restore a device backup only if no server-side history exists for this session."""
+    enforce_user_rate_limit(int(user["id"]), "memory_sync", 8)
     restored = chat_history.restore_messages(
         int(user["id"]),
         request.session_id,
@@ -758,6 +773,7 @@ def create_memory_fact(
     request: MemoryFactRequest,
     user: dict = Depends(get_current_user),
 ):
+    enforce_user_rate_limit(int(user["id"]), "memory_write", 20)
     try:
         value = validate_memory_value(request.value)
     except ValueError as error:
@@ -773,6 +789,7 @@ def delete_memory_facts(
     memory_key: str | None = Query(default=None, min_length=1, max_length=64),
     user: dict = Depends(get_current_user),
 ):
+    enforce_user_rate_limit(int(user["id"]), "memory_write", 20)
     deleted = chat_history.delete_memory(int(user["id"]), memory_key)
     return {"ok": True, "deleted": deleted}
 

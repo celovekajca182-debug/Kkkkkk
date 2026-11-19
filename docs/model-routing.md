@@ -89,7 +89,7 @@ After deployment, set the SWIN variables above in the FastAPI host's environment
 
 ## Safety and limits
 
-- The API key is read only by the server and is never returned by `/capabilities`.
+- The API key is read only by the server and is never returned by `/capabilities`. Account limits are 12 chat requests, 5 code generations, 8 scaffold generations, 8 memory synchronizations and 20 memory fact writes/deletes per five-minute window. The in-process limiter is capped at 4,096 active keys and is not a distributed quota system. Memory restore requests are capped at 250,000 aggregate characters.
 - Generated code still goes through SWIN's existing static checks. The API does not execute user-generated programs.
 - A successful API response confirms generation, not mathematical correctness or runtime correctness.
 - If no GPU inference endpoint/key has been configured, changing the model IDs alone does not download or run model weights.

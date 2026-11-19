@@ -31,6 +31,31 @@ class BenchmarkGuardrailTests(unittest.TestCase):
             app.enforce_rate_limit_key("probe", 1, window_seconds=300)
             app.enforce_rate_limit_key("probe", 1, window_seconds=300)
 
+    def test_rate_limit_registry_is_bounded_under_identifier_churn(self):
+        with patch("app.time.monotonic", return_value=100.0):
+            for index in range(4100):
+                app.enforce_rate_limit_key(f"probe:{index}", 2, window_seconds=300)
+        self.assertLessEqual(len(app._auth_attempts), 4096)
+
+    def test_memory_sync_rejects_oversized_aggregate_payload(self):
+        messages = [
+            {"role": "user", "content": "x" * 120000},
+            {"role": "assistant", "content": "y" * 120000},
+            {"role": "user", "content": "z" * 20000},
+        ]
+        with self.assertRaises(ValueError):
+            app.SyncMemoryRequest(session_id="backup", messages=messages)
+
+    def test_memory_sync_accepts_bounded_payload(self):
+        payload = app.SyncMemoryRequest(
+            session_id="backup",
+            messages=[
+                app.HistoryMessage(role="user", content="hello"),
+                app.HistoryMessage(role="assistant", content="world"),
+            ],
+        )
+        self.assertEqual(len(payload.messages), 2)
+
     def test_health_reports_actual_model_provider_configuration(self):
         def configured(role=None):
             return role in (None, "chat", "code")
