@@ -11,6 +11,11 @@ from assistant_core import (
 )
 
 
+class WordTokenizer:
+    def encode(self, value):
+        return value.split()
+
+
 class AssistantCoreTests(unittest.TestCase):
     def test_search_intent_is_detected_for_explicit_and_current_requests(self):
         self.assertTrue(should_research("Поищи последние новости по Godot 4 сегодня"))
@@ -67,7 +72,7 @@ class AssistantCoreTests(unittest.TestCase):
                 "snippet": "Документация описывает текущий API.",
                 "source_type": "Официальный источник",
             }],
-            block_size=512,
+            tokenizer=WordTokenizer(),\n            block_size=512,
         )
         self.assertIn("Пользователь пишет приложение на Python", prompt)
         self.assertIn("Документация описывает текущий API", prompt)
