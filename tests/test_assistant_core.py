@@ -1,6 +1,8 @@
 import unittest
 
 from assistant_core import (
+    search_web,
+    search_web_many,
     build_reasoning_prompt,
     build_search_queries,
     is_safe_public_url,
@@ -19,6 +21,10 @@ class WordTokenizer:
 
 
 class AssistantCoreTests(unittest.TestCase):
+    def test_remote_search_is_disabled(self):
+        self.assertEqual(search_web("current news"), [])
+        self.assertEqual(search_web_many("Поищи последние новости"), [])
+
     def test_search_intent_is_detected_for_explicit_and_current_requests(self):
         self.assertTrue(should_research("Поищи последние новости по Godot 4 сегодня"))
         self.assertTrue(should_research("Find the current release date"))
