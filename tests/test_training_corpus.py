@@ -1,12 +1,16 @@
 import tempfile
 import unittest
+
+import torch
 from pathlib import Path
 
 from transformer import CharTokenizer
 
 from train_transformer import (
     build_instruction_corpus,
+    build_instruction_examples,
     build_pretraining_corpus,
+    build_sft_windows,
     build_tensor_splits,
     read_instruction_file,
 )
@@ -74,6 +78,49 @@ class TrainingCorpusTests(unittest.TestCase):
             )
         self.assertIn("def add", sft)
         self.assertIn("CharacterBody2D", sft)
+
+    def test_sft_windows_mask_user_prompt_and_train_only_assistant_answer(self):
+        prompt = "Пользователь: Что такое функция в Python?"
+        answer = "Функция — это именованный блок кода, который выполняет задачу и может вернуть результат."
+        tokenizer = CharTokenizer.from_texts([prompt, answer, prompt + "\nSWIN:"])
+        windows = build_sft_windows([(prompt, answer)], tokenizer, block_size=96)
+        self.assertTrue(windows)
+
+        input_ids, targets = windows[0]
+        prompt_token_count = len(tokenizer.encode(prompt + "\nSWIN:"))
+        valid_positions = [index for index, token in enumerate(targets.tolist()) if token != -100]
+        self.assertEqual(valid_positions[0], prompt_token_count - 1)
+        self.assertEqual(input_ids.numel(), 96)
+        self.assertEqual(targets.numel(), 96)
+        self.assertTrue(all(token == -100 for token in targets[:prompt_token_count - 1].tolist()))
+
+    def test_sft_windows_cover_long_answers_with_overlapping_context(self):
+        prompt = "Пользователь: Объясни обработку исключений в Python."
+        answer = ("Используй try и except для обработки ожидаемых ошибок. " * 12)
+        tokenizer = CharTokenizer.from_texts([prompt, answer, prompt + "\nSWIN:"])
+        windows = build_sft_windows([(prompt, answer)], tokenizer, block_size=64)
+        self.assertGreaterEqual(len(windows), 3)
+        self.assertTrue(all(torch.any(targets != -100) for _, targets in windows))
+
+    def test_instruction_examples_are_deduplicated_and_keep_prompt_answer_separate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "knowledge.json").write_text(
+                '[{"title":"Python","question":"Что такое функция?","answer":"Именованный блок кода."}]',
+                encoding="utf-8",
+            )
+            (root / "dialogue.jsonl").write_text(
+                '{"question":"Что такое функция?","answer":"Именованный блок кода."}\n',
+                encoding="utf-8",
+            )
+            examples = build_instruction_examples(
+                root / "knowledge.json",
+                root / "dialogue.jsonl",
+                root / "missing.jsonl",
+            )
+        self.assertEqual(len(examples), 1)
+        self.assertIn("Пользователь:", examples[0][0])
+        self.assertEqual(examples[0][1], "Именованный блок кода.")
 
     def test_tensor_splits_use_distinct_validation_corpus(self):
         alphabet = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
