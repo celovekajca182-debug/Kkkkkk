@@ -26,7 +26,7 @@ SWIN FastAPI (Render / CPU)
 OpenAI-compatible inference endpoint (GPU/provider)
 ```
 
-The inference endpoint must implement `POST /v1/chat/completions`. vLLM and SGLang document this interface for the two selected model families. Configure one compatible endpoint that can route both model IDs, or use a gateway that exposes both deployments.
+Each inference endpoint must implement `POST /v1/chat/completions`. vLLM and SGLang document this interface for the two selected model families. Recommended: run Qwen3 and Qwen2.5-Coder as separate GPU deployments and set a separate URL/key for each role. A shared gateway is also supported.
 
 ## Environment variables
 
@@ -35,7 +35,11 @@ Set these as server-side secrets/environment variables. Never put the provider k
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `SWIN_LLM_BASE_URL` | empty | OpenAI-compatible API root, `/v1` URL, or full `/chat/completions` URL |
-| `SWIN_LLM_API_KEY` | empty | Optional bearer key for the inference provider |
+| `SWIN_LLM_API_KEY` | empty | Shared bearer key for a gateway |
+| `SWIN_CHAT_BASE_URL` | shared URL | Dedicated Qwen3 endpoint; overrides the shared URL |
+| `SWIN_CODE_BASE_URL` | shared URL | Dedicated Qwen2.5-Coder endpoint; overrides the shared URL |
+| `SWIN_CHAT_API_KEY` | shared key | Optional Qwen3 endpoint key |
+| `SWIN_CODE_API_KEY` | shared key | Optional Qwen2.5-Coder endpoint key |
 | `SWIN_CHAT_MODEL` | `Qwen/Qwen3-4B-Instruct-2507` | Model ID used by `/chat` |
 | `SWIN_CODE_MODEL` | `Qwen/Qwen2.5-Coder-7B-Instruct` | Model ID used by `/code/assist` |
 | `SWIN_LLM_TIMEOUT_SECONDS` | `90` | Inference request timeout, clamped to 5–240 seconds |
@@ -44,11 +48,11 @@ Set these as server-side secrets/environment variables. Never put the provider k
 | `SWIN_CHAT_TEMPERATURE` | `0.25` | Sampling temperature for chat |
 | `SWIN_CODE_TEMPERATURE` | `0.15` | Sampling temperature for code |
 
-When `SWIN_LLM_BASE_URL` is empty, SWIN preserves the legacy local-checkpoint path. When it is set, Qwen is preferred; if the provider is unavailable, the existing local model/retrieval fallback remains in place.
+When a role-specific URL and the shared `SWIN_LLM_BASE_URL` are all empty, SWIN preserves the legacy local-checkpoint path for that role. A role-specific URL overrides the shared gateway URL. If the configured provider is unavailable, the existing local model/retrieval fallback remains in place.
 
 ## Example: vLLM
 
-Run each model on a GPU inference host (or expose them behind a model-routing gateway). The official Qwen model cards include vLLM commands and OpenAI-compatible chat-completions examples. A single vLLM process started with one model serves that model only; two model IDs require two deployments or a compatible gateway.
+Run each model on a GPU inference host and set `SWIN_CHAT_BASE_URL` and `SWIN_CODE_BASE_URL` separately, or expose both behind a model-routing gateway and use `SWIN_LLM_BASE_URL`. The official Qwen model cards include vLLM commands and OpenAI-compatible chat-completions examples. A single vLLM process started with one model serves that model only; two model IDs require two deployments or a compatible gateway.
 
 After deployment, set the SWIN variables above in the FastAPI host's environment. Restart/redeploy the API and inspect `GET /capabilities`: the `reasoning` section reports whether the provider is configured and which model IDs are selected.
 
