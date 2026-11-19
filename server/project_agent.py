@@ -424,6 +424,59 @@ This is a starter scaffold. It does not implement all product-specific requireme
     }
 
 
+
+def validate_project_manifest(files: list[dict[str, Any]]) -> dict[str, Any]:
+    """Re-validate untrusted project file records at the local tool boundary."""
+    if not isinstance(files, list) or not files:
+        raise ProjectBundleError("Манифест не содержит файлов проекта.")
+    if len(files) > MAX_PROJECT_FILES:
+        raise ProjectBundleError(f"Проект превышает лимит в {MAX_PROJECT_FILES} файлов.")
+    seen: set[str] = set()
+    total = 0
+    results: list[dict[str, Any]] = []
+    failed = 0
+    for index, item in enumerate(files):
+        if not isinstance(item, dict):
+            raise ProjectBundleError(f"Запись файла №{index + 1} повреждена.")
+        path = _safe_relative_path(item.get("path") or item.get("name"))
+        key = path.casefold()
+        if key in seen:
+            raise ProjectBundleError(f"Повторяется путь файла: {path}")
+        seen.add(key)
+        content = item.get("content")
+        if not isinstance(content, str):
+            raise ProjectBundleError(f"Файл {path} должен содержать текст.")
+        if len(content) > MAX_FILE_CHARS or "\\x00" in content or "\\ufffd" in content:
+            raise ProjectBundleError(f"Файл {path} превышает лимит или содержит повреждённые данные.")
+        total += len(content)
+        if total > MAX_PROJECT_CHARS:
+            raise ProjectBundleError("Общий размер проекта превышает безопасный лимит.")
+        language = _language_for_path(path, item.get("language"))
+        validation = validate_code(content, language) if content.strip() else {
+            "status": "passed",
+            "method": "empty_file",
+            "message": "Пустой файл.",
+        }
+        if validation.get("status") == "failed":
+            failed += 1
+        results.append({
+            "path": path,
+            "language": language,
+            "status": validation.get("status", "not_run"),
+            "method": validation.get("method", "unknown"),
+            "message": validation.get("message", ""),
+        })
+    return {
+        "status": "needs_review" if failed else "passed_or_limited",
+        "file_count": len(results),
+        "total_characters": total,
+        "failed_files": failed,
+        "files": results,
+        "runtime": "not_run",
+        "execution_performed": False,
+    }
+
+
 def generate_project_bundle(
     task: str,
     language: str,
