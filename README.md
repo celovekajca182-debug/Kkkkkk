@@ -82,6 +82,23 @@ python train_transformer.py \
 
 SWIN остаётся небольшой экспериментальной моделью с byte-level BPE и ограниченным объёмом обучения. Wikipedia расширяет покрытие фактов, но сама по себе не создаёт reasoning или надёжную генерацию кода. Следующие архитектурные шаги — BPE/SentencePiece и отдельные тесты для математики и программирования. Для качества крупного ассистента реалистичнее отдельно оценивать дообучение лицензированной открытой модели на GPU, а не пытаться получить масштаб ChatGPT на маленьком CPU-тренере.
 
+## Продвинутое обучение математики и кода (Google Colab + Hugging Face)
+
+Для серьёзного математического и программного поведения используй отдельный QLoRA-контур, а не маленький экспериментальный Transformer, обучаемый с нуля:
+
+- Базовая модель: [Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), лицензия Apache-2.0.
+- Метод: 4-bit QLoRA / PEFT; базовые веса остаются замороженными, обучается компактный адаптер SWIN.
+- Математика: [NuminaMath-CoT](https://huggingface.co/datasets/project-numina/NuminaMath-CoT) и семь областей [Hendrycks MATH](https://huggingface.co/datasets/EleutherAI/hendrycks_math).
+- Программирование: MBPP sanitized и проверенные локальные примеры SWIN.
+- Общие приветствия и пустой small-talk в этот этап не добавляются.
+- Готовый ноутбук: [notebooks/SWIN_AI_QLoRA_Colab.ipynb](notebooks/SWIN_AI_QLoRA_Colab.ipynb).
+- Код обучения: [server/train_swin_qlora.py](server/train_swin_qlora.py).
+- Подробности, лимиты и команды: [docs/qlora-math-code-training.md](docs/qlora-math-code-training.md).
+
+Нужен CUDA GPU в Colab. Checkpoint и адаптер сохраняй на Google Drive; после обучения адаптер можно опубликовать в собственном репозитории Hugging Face. Затем inference-сервис должен загрузить базовую Qwen3 вместе с адаптером. **Публикация модели на Hugging Face сама по себе не подключает её к Android API.**
+
+Старый `train_transformer.py` и workflow `Train SWIN Transformer` оставлены только для воспроизводимости экспериментов с обучением с нуля. Старый workflow теперь запускается вручную и не должен использоваться для основного математико-программного обучения.
+
 ## Регистрация и вход
 
 Android-клиент включает экран регистрации и входа по email/паролю. Пароль хешируется Argon2id на сервере, а bearer-токен шифруется на телефоне ключом Android Keystore. API предоставляет `/auth/register`, `/auth/login`, `/auth/me` и `/auth/logout`; чат `/chat` и очистка памяти требуют авторизации. Электронная почта пока служит логином, подтверждение почты и восстановление пароля через письмо ещё не реализованы. Подробности: [docs/authentication.md](docs/authentication.md).
