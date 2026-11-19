@@ -556,6 +556,8 @@ def code_assist(
                     "was executed. Avoid placeholders and TODOs unless the task explicitly asks for them."
                 ),
                 max_output_tokens=max_tokens,
+                model_override=os.getenv("SWIN_CODING_MODEL", "gpt-6.2-astra"),
+                reasoning_effort=os.getenv("SWIN_CODING_EFFORT", "high"),
             )
         result = run_code_assist(
             task=request.task,
@@ -749,7 +751,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             memories=persistent_memories,
             references=references,
             tokenizer=None,
-            block_size=12000,
+            block_size=40000,
         )
         try:
             generated_answer = generate_text(
@@ -969,7 +971,8 @@ def capabilities():
         },
         "reasoning": {
             "provider_enabled": llm_enabled(),
-            "model": os.getenv("SWIN_REASONING_MODEL", "gpt-6.2-sol") if llm_enabled() else "local_swin_transformer",
+            "chat_model": os.getenv("SWIN_REASONING_MODEL", "gpt-6.2-sol") if llm_enabled() else "local_swin_transformer",
+            "coding_model": os.getenv("SWIN_CODING_MODEL", "gpt-6.2-astra") if llm_enabled() else "local_swin_transformer",
             "fallback": "local_swin_transformer",
         },
         "knowledge": {
