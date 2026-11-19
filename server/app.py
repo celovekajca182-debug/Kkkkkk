@@ -6,11 +6,12 @@ from collections import OrderedDict, defaultdict, deque
 from pathlib import Path
 from threading import Lock
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from auth import AuthStore, TOKEN_TTL_SECONDS, validate_email
+from chat_history import ChatHistoryStore
 from coding_agent import run_code_assist
 from knowledge import KnowledgeBase
 from model import TinyCharRNN
@@ -19,6 +20,7 @@ app = FastAPI(title="SWIN AI", version="0.6.0")
 
 database_path = Path(os.getenv("SWIN_DATABASE_PATH", "data/swin.sqlite3"))
 auth_store = AuthStore(database_path)
+chat_history = ChatHistoryStore(database_path)
 bearer_scheme = HTTPBearer(auto_error=False)
 
 rnn_model = None
@@ -121,6 +123,19 @@ class CodeAssistRequest(BaseModel):
 
 class ClearMemoryRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=80)
+
+
+def record_chat_turn(
+    memory_key: str,
+    user_id: int,
+    session_id: str,
+    message: str,
+    answer: str,
+) -> int:
+    """Keep a bounded hot cache and persist the complete turn in SQLite."""
+    count = remember_turn(memory_key, message, answer)
+    chat_history.save_turn(user_id, session_id, message, answer)
+    return count
 
 
 def enforce_auth_rate_limit(request: Request, action: str, max_attempts: int) -> None:
@@ -281,7 +296,23 @@ def clear_memory(
 ):
     memory_key = f"{user['id']}:{request.session_id}"
     conversation_memory.pop(memory_key, None)
-    return {"ok": True, "session_id": request.session_id, "memory_turns": 0}
+    deleted_messages = chat_history.clear(int(user["id"]), request.session_id)
+    return {
+        "ok": True,
+        "session_id": request.session_id,
+        "memory_turns": 0,
+        "deleted_messages": deleted_messages,
+    }
+
+
+@app.get("/memory/history")
+def get_memory_history(
+    session_id: str = Query(min_length=1, max_length=80),
+    user: dict = Depends(get_current_user),
+):
+    """Return only the authenticated user's messages for the requested session."""
+    messages = chat_history.messages(int(user["id"]), session_id, limit=80)
+    return {"session_id": session_id, "messages": messages, "count": len(messages)}
 
 
 @app.post("/code/assist")
@@ -318,7 +349,9 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=422, detail="session_id не должен быть пустым.")
 
     memory_key = f"{user['id']}:{session_id}"
-    history = conversation_memory.get(memory_key, [])
+    history = chat_history.turns(int(user["id"]), session_id, limit=MAX_TURNS_PER_SESSION)
+    if not history:
+        history = conversation_memory.get(memory_key, [])
 
     small_talk = safe_small_talk(message)
     if small_talk is not None:
@@ -336,7 +369,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     match = knowledge.search(message)
     if match is not None:
         answer = match["answer"]
-        turns = remember_turn(memory_key, message, answer)
+        turns = record_chat_turn(memory_key, int(user['id']), session_id, message, answer)
         return {
             "answer": answer,
             "mode": "local_knowledge",
@@ -374,7 +407,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                 )
                 response_mode = "safe_fallback"
                 response_source = "защита от бессвязной генерации"
-            turns = remember_turn(memory_key, message, answer)
+            turns = record_chat_turn(memory_key, int(user['id']), session_id, message, answer)
             elapsed = max(time.perf_counter() - started_at, 0.001)
             response = {
                 "answer": answer,
@@ -415,7 +448,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             )
             response_mode = "safe_fallback"
             response_source = "защита от бессвязной генерации"
-        turns = remember_turn(memory_key, message, answer)
+        turns = record_chat_turn(memory_key, int(user['id']), session_id, message, answer)
         return {
             "answer": answer,
             "mode": response_mode,
