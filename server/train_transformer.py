@@ -48,7 +48,8 @@ def build_instruction_examples(
     def add(prompt: str, answer: str):
         prompt = prompt.strip()
         answer = answer.strip()
-        key = (prompt.casefold(), answer.casefold())
+        question_key = prompt.split("\nПользователь:", 1)[-1].strip()
+        key = (question_key.casefold(), answer.casefold())
         if prompt and answer and key not in seen:
             seen.add(key)
             examples.append((prompt, answer))
