@@ -118,6 +118,38 @@ class ChatHistoryStore:
                 pending_user = None
         return turns[-max(1, int(limit)):]
 
+    def restore_messages(
+        self, user_id: int, session_id: str, messages: list[dict[str, str]]
+    ) -> bool:
+        """Restore a local device backup only when the server session is empty."""
+        normalized = [
+            (item.get("role", ""), item.get("content", "").strip())
+            for item in messages
+            if item.get("role") in {"user", "assistant"}
+            and item.get("content", "").strip()
+        ][-self.max_messages_per_session:]
+        if not normalized:
+            return False
+        now = int(time.time())
+        with self._connect() as db:
+            existing = db.execute(
+                "SELECT 1 FROM chat_messages WHERE user_id = ? AND session_id = ? LIMIT 1",
+                (int(user_id), session_id),
+            ).fetchone()
+            if existing is not None:
+                return False
+            db.executemany(
+                """
+                INSERT INTO chat_messages(user_id, session_id, role, content, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (int(user_id), session_id, role, content[:120000], now)
+                    for role, content in normalized
+                ],
+            )
+        return True
+
     def clear(self, user_id: int, session_id: str) -> int:
         with self._connect() as db:
             cursor = db.execute(
