@@ -99,7 +99,25 @@ jobs:
             server/data/mbpp_manifest.json
           if-no-files-found: error
 
+      - name: Verify this is the latest training revision
+        id: revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest_sha="$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/main" \
+            | python -c 'import json,sys; print(json.load(sys.stdin)["sha"])')"
+          if [ "$latest_sha" = "$GITHUB_SHA" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping stale checkpoint release: $GITHUB_SHA != $latest_sha"
+          fi
+
       - name: Publish SWIN model checkpoint
+        if: steps.revision.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: swin-model-latest
