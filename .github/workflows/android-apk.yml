@@ -47,12 +47,12 @@ jobs:
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
           test -n "$AAPT"
           "$AAPT" dump badging "$APK" | tee /tmp/apk-badging.txt
-          grep -q "package: name='com.swinai.app' versionCode='9' versionName='0.7.3'" /tmp/apk-badging.txt
+          grep -q "package: name='com.swinai.app' versionCode='10' versionName='0.7.4'" /tmp/apk-badging.txt
 
       - name: Upload installable APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SWIN-AI-Android-APK-v0.7.3
+          name: SWIN-AI-Android-APK-v0.7.4
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -60,10 +60,10 @@ jobs:
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: swin-ai-v0.7.3
-          name: SWIN AI Android v0.7.3
+          tag_name: swin-ai-v0.7.4
+          name: SWIN AI Android v0.7.4
           body: |
-            SWIN AI Android build v0.7.3.
+            SWIN AI Android build v0.7.4.
 
             Install the APK on Android 6.0 or newer. This is a debug-signed test build.
           files: android/app/build/outputs/apk/debug/app-debug.apk
