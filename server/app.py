@@ -137,13 +137,13 @@ class RegisterRequest(AuthRequest):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     session_id: str = Field(min_length=1, max_length=80)
-    response_language: str = Field(default="auto", min_length=2, max_length=16)
+    response_language: str = Field(default="ru", min_length=2, max_length=16)
 
 
 class CodeAssistRequest(BaseModel):
     task: str = Field(min_length=1, max_length=4000)
     language: str = Field(default="auto", min_length=1, max_length=32)
-    response_language: str = Field(default="auto", min_length=2, max_length=16)
+    response_language: str = Field(default="ru", min_length=2, max_length=16)
     research_web: bool = True
     show_activity: bool = False
     project_context: str = Field(default="", max_length=4000)
