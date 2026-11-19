@@ -910,7 +910,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
                     generated_answer = generate_model_text(
                         prompt,
                         role="chat",
-                        max_tokens=int(os.getenv("SWIN_CHAT_MAX_TOKENS", "1200")),
+                        max_tokens=int(os.getenv("SWIN_CHAT_MAX_TOKENS", "4096")),
                         temperature=float(os.getenv("SWIN_CHAT_TEMPERATURE", "0.25")),
                     ).strip()
                     used_remote_model = True
