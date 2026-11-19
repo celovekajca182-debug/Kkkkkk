@@ -872,7 +872,7 @@ def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             confidence=1.0,
         )
 
-    # Strictly local retrieval: no third-party search or model APIs.
+    # Retrieval stays local; model inference uses the configured Qwen endpoint when available.
     research_requested = should_research(message)
     references = knowledge.search_many(message, limit=3) if response_language == "ru" else []
     local_match = knowledge.search(message) if response_language == "ru" else None
