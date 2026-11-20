@@ -162,9 +162,11 @@ def startup_load_model() -> None:
 @app.get("/health")
 def health() -> dict[str, Any]:
     ready = _runtime is not None
+    if not ready:
+        raise HTTPException(status_code=503, detail="SWIN coder model is still loading.")
     return {
-        "status": "ok" if ready else "starting",
-        "ready": ready,
+        "status": "ok",
+        "ready": True,
         "model": MODEL_ID,
         "base_model": BASE_MODEL_ID,
         "adapter": ADAPTER_ID,
