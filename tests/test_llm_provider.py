@@ -36,6 +36,8 @@ class LlmProviderTests(unittest.TestCase):
             self.assertFalse(llm_provider.provider_configured())
             with self.assertRaisesRegex(RuntimeError, "token is missing"):
                 llm_provider.generate_model_text("hello", role="chat")
+            with self.assertRaisesRegex(RuntimeError, "endpoint is not configured"):
+                llm_provider.generate_model_text("write code", role="code")
 
     def test_shared_hugging_face_token_enables_both_model_roles(self):
         with (
@@ -45,7 +47,7 @@ class LlmProviderTests(unittest.TestCase):
             patch.object(llm_provider, "CODE_BASE_URL", ""),
         ):
             self.assertTrue(llm_provider.provider_configured("chat"))
-            self.assertTrue(llm_provider.provider_configured("code"))
+            self.assertFalse(llm_provider.provider_configured("code"))
 
     def test_self_hosted_endpoint_can_be_configured_without_a_key(self):
         with (
@@ -53,8 +55,23 @@ class LlmProviderTests(unittest.TestCase):
             patch.object(llm_provider, "API_KEY", ""),
             patch.object(llm_provider, "CHAT_BASE_URL", ""),
             patch.object(llm_provider, "CODE_BASE_URL", ""),
+            patch.object(llm_provider, "CODE_MODEL", "example/coder"),
         ):
             self.assertTrue(llm_provider.provider_configured("chat"))
+            self.assertTrue(llm_provider.provider_configured("code"))
+
+    def test_custom_adapter_requires_dedicated_code_endpoint(self):
+        with (
+            patch.object(llm_provider, "BASE_URL", "https://router.huggingface.co/v1"),
+            patch.object(llm_provider, "API_KEY", "hf-test-token"),
+            patch.object(llm_provider, "CODE_BASE_URL", ""),
+            patch.object(llm_provider, "CODE_MODEL", llm_provider.SWIN_ADAPTER_MODEL),
+        ):
+            self.assertFalse(llm_provider.provider_configured("code"))
+        with (
+            patch.object(llm_provider, "CODE_BASE_URL", "https://gpu.example/v1"),
+            patch.object(llm_provider, "CODE_MODEL", llm_provider.SWIN_ADAPTER_MODEL),
+        ):
             self.assertTrue(llm_provider.provider_configured("code"))
 
     def test_model_roles_are_separate(self):
@@ -64,7 +81,7 @@ class LlmProviderTests(unittest.TestCase):
         )
         self.assertEqual(
             llm_provider.model_for_role("code"),
-            "Qwen/Qwen2.5-Coder-7B-Instruct",
+            "MAKSIM67771488/SWIN-AI-Coder-Smart",
         )
 
     def test_completion_uses_correct_model_and_auth(self):
@@ -75,6 +92,7 @@ class LlmProviderTests(unittest.TestCase):
             patch.object(llm_provider, "BASE_URL", "https://inference.example/v1"),
             patch.object(llm_provider, "API_KEY", "test-secret"),
             patch.object(llm_provider, "CODE_MODEL", "example/coder"),
+            patch.object(llm_provider, "CODE_BASE_URL", ""),
             patch(
                 "llm_provider.urllib.request.urlopen",
                 return_value=FakeResponse(payload),
@@ -176,6 +194,24 @@ class LlmProviderTests(unittest.TestCase):
                     llm_provider.generate_model_text("ping", role="chat"),
                     "First second",
                 )
+
+    def test_hugging_face_dedicated_endpoint_receives_scale_up_timeout(self):
+        payload = {"choices": [{"message": {"content": "ready"}}]}
+        with (
+            patch.object(llm_provider, "CODE_MODEL", llm_provider.SWIN_ADAPTER_MODEL),
+            patch.object(llm_provider, "CODE_BASE_URL", "https://abc.eu-west-1.aws.endpoints.huggingface.cloud/v1"),
+            patch.object(llm_provider, "BASE_URL", ""),
+            patch.object(llm_provider, "CODE_API_KEY", "gpu-secret"),
+            patch.object(llm_provider, "API_KEY", ""),
+            patch.object(llm_provider.os, "environ", {**llm_provider.os.environ, "SWIN_CODE_SCALE_UP_TIMEOUT": "180"}),
+            patch(
+                "llm_provider.urllib.request.urlopen",
+                return_value=FakeResponse(payload),
+            ) as urlopen,
+        ):
+            self.assertEqual(llm_provider.generate_model_text("hello", role="code"), "ready")
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.headers.get("X-scale-up-timeout"), "180")
 
 
 if __name__ == "__main__":
