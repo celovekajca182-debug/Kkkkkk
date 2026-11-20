@@ -15,9 +15,8 @@ from urllib.parse import urlsplit
 CHAT_MODEL = os.getenv(
     "SWIN_CHAT_MODEL", "Qwen/Qwen3-4B-Thinking-2507"
 ).strip()
-CODE_MODEL = os.getenv(
-    "SWIN_CODE_MODEL", "MAKSIM67771488/SWIN-AI-Coder-Smart"
-).strip()
+SWIN_ADAPTER_MODEL = "MAKSIM67771488/SWIN-AI-Coder-Smart"
+CODE_MODEL = os.getenv("SWIN_CODE_MODEL", SWIN_ADAPTER_MODEL).strip()
 
 # A shared gateway is supported, but per-role URLs allow two independent GPU hosts.
 BASE_URL = os.getenv("SWIN_LLM_BASE_URL", "").strip().rstrip("/")
@@ -38,6 +37,11 @@ def _base_url_for_role(role: Literal["chat", "code"]) -> str:
     if role == "chat":
         return CHAT_BASE_URL or BASE_URL
     if role == "code":
+        # The custom PEFT adapter is not a serverless HF Inference Providers
+        # catalog model. Require its dedicated GPU endpoint rather than silently
+        # sending it to the shared router.
+        if CODE_MODEL == SWIN_ADAPTER_MODEL and not CODE_BASE_URL:
+            return ""
         return CODE_BASE_URL or BASE_URL
     raise ValueError("Unknown SWIN model role.")
 
