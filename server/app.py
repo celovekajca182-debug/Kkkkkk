@@ -4,7 +4,7 @@ import time
 import urllib.request
 from collections import Counter, OrderedDict, defaultdict, deque
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -75,31 +75,6 @@ transformer_url = os.getenv(
     "https://github.com/celovekajca182-debug/Kkkkkk/releases/download/swin-model-latest/swin-transformer.pt",
 )
 
-# Render's filesystem is ephemeral: restore the public checkpoint at each cold start.
-if not transformer_path.is_file() and transformer_url:
-    try:
-        transformer_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = transformer_path.with_suffix(transformer_path.suffix + ".download")
-        request = urllib.request.Request(
-            transformer_url,
-            headers={"User-Agent": "SWIN-AI-Model-Loader/1.0"},
-        )
-        with urllib.request.urlopen(request, timeout=90) as response, temporary_path.open("wb") as output:
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                output.write(chunk)
-        if temporary_path.stat().st_size < 1024:
-            raise ValueError("Скачанный checkpoint слишком мал.")
-        temporary_path.replace(transformer_path)
-        print(f"SWIN Transformer checkpoint downloaded: {transformer_path}")
-    except Exception as error:
-        print(f"SWIN Transformer download error: {error}")
-        try:
-            temporary_path.unlink(missing_ok=True)
-        except Exception:
-            pass
 knowledge_path = Path(os.getenv("SWIN_KNOWLEDGE_PATH", "data/knowledge.json"))
 wiki_path = Path(os.getenv(
     "SWIN_WIKIPEDIA_CORPUS_PATH",
@@ -109,37 +84,6 @@ wiki_url = os.getenv(
     "SWIN_WIKIPEDIA_CORPUS_URL",
     "https://github.com/celovekajca182-debug/Kkkkkk/releases/download/swin-wikipedia-latest/finewiki_ru_train.txt",
 ).strip()
-
-# Restore the prepared Russian Wikipedia/FineWiki passages on ephemeral hosts.
-if not wiki_path.is_file() and wiki_url:
-    temporary_wiki = wiki_path.with_suffix(wiki_path.suffix + ".download")
-    try:
-        wiki_path.parent.mkdir(parents=True, exist_ok=True)
-        request = urllib.request.Request(
-            wiki_url,
-            headers={"User-Agent": "SWIN-AI-Wikipedia-Loader/1.0"},
-        )
-        max_wiki_bytes = max(1_000_000, min(
-            int(os.getenv("SWIN_WIKIPEDIA_MAX_BYTES", str(16 * 1024 * 1024))),
-            32 * 1024 * 1024,
-        ))
-        total = 0
-        with urllib.request.urlopen(request, timeout=90) as response, temporary_wiki.open("wb") as output:
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > max_wiki_bytes:
-                    raise ValueError("FineWiki corpus exceeds the configured download limit.")
-                output.write(chunk)
-        if total < 1000:
-            raise ValueError("Downloaded FineWiki corpus is unexpectedly small.")
-        temporary_wiki.replace(wiki_path)
-        print(f"SWIN FineWiki corpus downloaded: {total:,} bytes")
-    except Exception as error:
-        print(f"SWIN FineWiki corpus download error: {error}")
-        temporary_wiki.unlink(missing_ok=True)
 
 knowledge = KnowledgeBase(
     knowledge_path,
@@ -216,6 +160,112 @@ if rnn_path.is_file():
         print(f"SWIN RNN loaded: {rnn_path}")
     except Exception as error:
         print(f"SWIN RNN load error: {error}")
+
+# Keep the API responsive: optional model/corpus downloads and indexing run after startup.
+_asset_warmup_thread: Thread | None = None
+
+
+def _download_optional_asset(url: str, destination: Path, *, max_bytes: int | None = None) -> int:
+    temporary = destination.with_suffix(destination.suffix + ".download")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "SWIN-AI-Asset-Loader/1.0"},
+    )
+    total = 0
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response, temporary.open("wb") as output:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if max_bytes is not None and total > max_bytes:
+                    raise ValueError("Optional asset exceeds the configured download limit.")
+                output.write(chunk)
+        if total < 1024:
+            raise ValueError("Downloaded optional asset is unexpectedly small.")
+        temporary.replace(destination)
+        return total
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _restore_optional_assets() -> None:
+    global knowledge, transformer_model
+
+    # The local model is only needed when no remote chat provider is configured.
+    # Set SWIN_LOAD_LOCAL_TRANSFORMER=true to force the local fallback on.
+    load_setting = os.getenv("SWIN_LOAD_LOCAL_TRANSFORMER", "auto").strip().lower()
+    load_local_model = (
+        load_setting in {"1", "true", "yes", "on"}
+        or (load_setting == "auto" and not provider_configured("chat"))
+    )
+
+    if load_local_model:
+        try:
+            if not transformer_path.is_file() and transformer_url:
+                size = _download_optional_asset(transformer_url, transformer_path)
+                print(f"SWIN Transformer checkpoint downloaded in background: {size:,} bytes")
+            if transformer_path.is_file() and transformer_model is None:
+                import torch
+
+                cpu_threads = max(1, min(4, int(os.getenv("SWIN_NUM_THREADS", "2"))))
+                torch.set_num_threads(cpu_threads)
+                try:
+                    torch.set_num_interop_threads(1)
+                except RuntimeError:
+                    pass
+                from transformer import load_transformer
+
+                transformer_model = load_transformer(str(transformer_path))
+                print(f"SWIN Transformer loaded in background: {transformer_path}")
+        except Exception as error:
+            print(f"SWIN Transformer background load error: {error}")
+    else:
+        print("SWIN local Transformer loading skipped: remote chat provider is configured.")
+
+    # FineWiki retrieval is useful but not required to serve chat requests.
+    try:
+        if not wiki_path.is_file() and wiki_url:
+            max_wiki_bytes = max(1_000_000, min(
+                int(os.getenv("SWIN_WIKIPEDIA_MAX_BYTES", str(16 * 1024 * 1024))),
+                32 * 1024 * 1024,
+            ))
+            size = _download_optional_asset(
+                wiki_url,
+                wiki_path,
+                max_bytes=max_wiki_bytes,
+            )
+            print(f"SWIN FineWiki corpus downloaded in background: {size:,} bytes")
+        if wiki_path.is_file() and not knowledge.wiki_entries:
+            refreshed_knowledge = KnowledgeBase(
+                knowledge_path,
+                wiki_path=wiki_path,
+                max_wiki_chunks=int(os.getenv("SWIN_WIKIPEDIA_MAX_CHUNKS", "12000")),
+            )
+            knowledge = refreshed_knowledge
+            print(
+                "SWIN FineWiki index loaded in background: "
+                f"articles={knowledge.wiki_articles}, passages={len(knowledge.wiki_entries)}"
+            )
+    except Exception as error:
+        print(f"SWIN FineWiki background load error: {error}")
+
+
+@app.on_event("startup")
+def start_optional_asset_warmup() -> None:
+    global _asset_warmup_thread
+    if _asset_warmup_thread is not None and _asset_warmup_thread.is_alive():
+        return
+    _asset_warmup_thread = Thread(
+        target=_restore_optional_assets,
+        name="swin-optional-asset-warmup",
+        daemon=True,
+    )
+    _asset_warmup_thread.start()
+
 
 # Conversation history is isolated by authenticated user and client session.
 conversation_memory: OrderedDict[str, list[tuple[str, str]]] = OrderedDict()
