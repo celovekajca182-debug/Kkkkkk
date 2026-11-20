@@ -69,3 +69,48 @@ coding_model must show MAKSIM67771488/SWIN-AI-Coder-Smart.
 - This implementation has not yet been run against a live GPU in this repo.
   A healthy container startup and a real prompt test are required before
   claiming the adapter is active.
+
+
+## Deploy this container on Hugging Face Inference Endpoints
+
+The Docker image is published to GitHub Container Registry by
+`.github/workflows/publish-swin-peft-image.yml`.
+Use the immutable commit tag shown in the successful publish workflow run:
+`ghcr.io/celovekajca182-debug/swin-peft-coder:<IMAGE_COMMIT_SHA>`.
+
+1. Open the [Inference Endpoints dashboard](https://ui.endpoints.huggingface.co/).
+2. Select the base repository `unsloth/Qwen2.5-Coder-1.5B-Instruct-bnb-4bit`.
+   Hugging Face mounts this repository at `/repository`; the SWIN server
+   detects that mount and loads the base model locally.
+3. Choose GPU hardware `AWS / NVIDIA T4 / x1` (14 GB, listed at $0.50/hour).
+   Select the nearest EU region offered in the region picker.
+4. Under **Custom Container**, use the published image tag, set port `8000`,
+   and health route `/health`.
+5. Add runtime environment variables:
+   - `SWIN_INFERENCE_API_KEY`: a new long random secret shared only with the
+     Render API service.
+   - `HF_TOKEN`: optional read token; the base and adapter repositories are
+     public, so it is not needed unless Hub access requires authentication.
+   - `SWIN_CODE_ADAPTER=MAKSIM67771488/SWIN-AI-Coder-Smart`
+   - `SWIN_BASE_MODEL=/repository`
+6. Set one maximum replica. Enable **Automatic Scale-to-Zero** and minimum
+   replicas `0` to avoid paying while idle. A scale-from-zero request has a
+   cold start; the API sends `X-Scale-Up-Timeout` to give the model time to load.
+7. Create the endpoint. Copy its HTTPS endpoint URL when the status is Running.
+
+Hugging Face requires an active subscription and payment method for dedicated
+Inference Endpoints. T4 is billed at $0.50/hour while the replica is
+initializing or running; billing is per minute. Scale-to-zero stops compute
+charges while idle, but the first request after idle can wait for model startup.
+
+After the endpoint URL exists, set these server-side environment variables on
+the existing Render API service (never in the Android APK):
+
+    SWIN_CODE_BASE_URL=https://YOUR-ENDPOINT-URL/v1
+    SWIN_CODE_API_KEY=THE_SAME_SWIN_INFERENCE_API_KEY
+    SWIN_CODE_MODEL=MAKSIM67771488/SWIN-AI-Coder-Smart
+
+Then redeploy the Render API and verify `/capabilities` reports
+`code_provider_enabled: true` and the SWIN adapter ID as `coding_model`.
+Do not set the GPU endpoint to always-on unless you explicitly accept the
+continuous hourly charge.
