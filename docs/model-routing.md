@@ -1,15 +1,15 @@
-# SWIN AI: Qwen model routing
+# SWIN AI: model routing
 
 SWIN uses two independent model roles:
 
 | Role | Default model | Responsibility |
 | --- | --- | --- |
 | General chat | `Qwen/Qwen3-4B-Thinking-2507` | Conversation, explanations, math and general reasoning |
-| Coding | `Qwen/Qwen2.5-Coder-7B-Instruct` | Code generation, debugging, refactoring and repair |
+| Coding | `MAKSIM67771488/SWIN-AI-Coder-Smart` | Custom SWIN LoRA coder loaded on its matching Qwen2.5-Coder-1.5B base |
 
 The model IDs are configurable; no model weights are bundled into the Android APK or the lightweight FastAPI service.
 
-The selected Hugging Face model cards identify both defaults as Apache-2.0: Qwen3-4B-Thinking-2507 has 4.0B parameters and a native 262,144-token context; Qwen2.5-Coder-7B-Instruct has 7.61B parameters and a 131,072-token context.
+The chat route uses a provider-served Qwen3 model. The coding route defaults to the SWIN LoRA adapter; it must be loaded together with its exact 4-bit base model by the dedicated CUDA service described in `docs/swin-adapter-deployment.md`.
 
 ## Runtime architecture
 
@@ -19,7 +19,7 @@ Android app
     v
 SWIN FastAPI (Render / CPU)
     |-- /chat ------> Qwen3 chat model
-    |-- /code/assist -> Qwen2.5-Coder model
+    |-- /code/assist -> SWIN PEFT inference service (CUDA GPU)
     |-- memory, auth, retrieval and static code checks stay in SWIN
     |
     v
@@ -57,7 +57,7 @@ Set these as server-side secrets/environment variables. Never put the provider k
 | `SWIN_CHAT_API_KEY` | shared key | Optional Qwen3 endpoint key |
 | `SWIN_CODE_API_KEY` | shared key | Optional Qwen2.5-Coder endpoint key |
 | `SWIN_CHAT_MODEL` | `Qwen/Qwen3-4B-Thinking-2507` | Model ID used by `/chat` |
-| `SWIN_CODE_MODEL` | `Qwen/Qwen2.5-Coder-7B-Instruct` | Model ID used by `/code/assist` |
+| `SWIN_CODE_MODEL` | `MAKSIM67771488/SWIN-AI-Coder-Smart` | Custom adapter served by the dedicated CUDA service |
 | `SWIN_LLM_TIMEOUT_SECONDS` | `90` | Inference request timeout, clamped to 5–240 seconds |
 | `SWIN_CHAT_MAX_TOKENS` | `4096` | Maximum answer tokens for Qwen3 |
 | `SWIN_CODE_MAX_TOKENS` | `2400` | Maximum generated code tokens |
@@ -68,7 +68,7 @@ When a role-specific URL and the shared `SWIN_LLM_BASE_URL` are all empty, SWIN 
 
 ## Easiest setup: Hugging Face Inference Providers
 
-Hugging Face's Inference Providers router chooses a provider that currently serves each requested model and can retry another provider when one is unavailable or rate-limited. SWIN uses one OpenAI-compatible router URL and one token while sending the selected model ID for each role. Do not pin a provider unless there is a deliberate operational reason; provider availability and pricing can change. Check the model cards and account billing/credits before enabling live inference.
+Hugging Face's Inference Providers router chooses a provider for catalog models. SWIN can use it for general chat. It does not automatically load this custom PEFT adapter from its repository; the SWIN coding role therefore requires the dedicated CUDA service and role-specific URL documented in `docs/swin-adapter-deployment.md`. Do not send the adapter ID to the shared HF router.
 
 In the Render API service environment, set:
 
@@ -79,11 +79,11 @@ SWIN_CHAT_MODEL=Qwen/Qwen3-4B-Thinking-2507
 SWIN_CODE_MODEL=Qwen/Qwen2.5-Coder-7B-Instruct
 ```
 
-Create a Hugging Face token with inference permissions, enable an available provider in the Inference Providers settings, add these values to the server (not the Android app), and redeploy the API. Hugging Face routes chat-completion requests to a provider serving the model. Provider usage is billed at that provider's price; check current pricing before using it. You do not need to configure `SWIN_CHAT_BASE_URL` or `SWIN_CODE_BASE_URL` when using the shared router.
+Create a Hugging Face token with inference permissions, enable an available provider in the Inference Providers settings, add these values to the server (not the Android app), and redeploy the API. This shared router configuration serves chat only while the custom adapter is the configured code model. Set `SWIN_CODE_BASE_URL` and `SWIN_CODE_API_KEY` separately after deploying the dedicated CUDA service. Provider usage is billed at the selected provider's price; check current pricing before using it.
 
 ## Example: vLLM
 
-Run each model on a GPU inference host and set `SWIN_CHAT_BASE_URL` and `SWIN_CODE_BASE_URL` separately, or expose both behind a model-routing gateway and use `SWIN_LLM_BASE_URL`. The official Qwen model cards include vLLM commands and OpenAI-compatible chat-completions examples. A single vLLM process started with one model serves that model only; two model IDs require two deployments or a compatible gateway.
+Run the general chat model on a provider/GPU host as needed. The SWIN adapter requires the dedicated PEFT container described in `docs/swin-adapter-deployment.md`; set `SWIN_CODE_BASE_URL` explicitly. Do not use one generic Hugging Face router URL for both roles.
 
 After deployment, set the SWIN variables above in the FastAPI host's environment. Restart/redeploy the API and inspect `GET /capabilities`: the `reasoning` section reports whether the provider is configured and which model IDs are selected.
 
