@@ -195,6 +195,24 @@ class LlmProviderTests(unittest.TestCase):
                     "First second",
                 )
 
+    def test_hugging_face_dedicated_endpoint_receives_scale_up_timeout(self):
+        payload = {"choices": [{"message": {"content": "ready"}}]}
+        with (
+            patch.object(llm_provider, "CODE_MODEL", llm_provider.SWIN_ADAPTER_MODEL),
+            patch.object(llm_provider, "CODE_BASE_URL", "https://abc.eu-west-1.aws.endpoints.huggingface.cloud/v1"),
+            patch.object(llm_provider, "BASE_URL", ""),
+            patch.object(llm_provider, "CODE_API_KEY", "gpu-secret"),
+            patch.object(llm_provider, "API_KEY", ""),
+            patch.object(llm_provider.os, "environ", {**llm_provider.os.environ, "SWIN_CODE_SCALE_UP_TIMEOUT": "180"}),
+            patch(
+                "llm_provider.urllib.request.urlopen",
+                return_value=FakeResponse(payload),
+            ) as urlopen,
+        ):
+            self.assertEqual(llm_provider.generate_model_text("hello", role="code"), "ready")
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("X-scale-up-timeout"), "180")
+
 
 if __name__ == "__main__":
     unittest.main()
