@@ -88,6 +88,7 @@ def _apply_chat_template(tokenizer: Any, messages: list[ChatMessage]) -> str:
 def _load_runtime() -> tuple[Any, Any, Any]:
     """Load the Qwen base and SWIN LoRA adapter once on a CUDA device."""
     import torch
+    from huggingface_hub import hf_hub_download
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -96,12 +97,29 @@ def _load_runtime() -> tuple[Any, Any, Any]:
             "The SWIN PEFT coder requires a CUDA GPU. Do not run this 4-bit model on the Render CPU service."
         )
 
-    LOG.info("Loading SWIN tokenizer from %s", ADAPTER_ID)
+    # The adapter repo may contain tokenizer.json/chat_template.jinja but no
+    # standalone config.json. Load the tokenizer from the exact base model and
+    # apply the adapter repository's chat template separately.
+    LOG.info("Loading base tokenizer from %s", BASE_MODEL_ID)
     tokenizer = AutoTokenizer.from_pretrained(
-        ADAPTER_ID,
+        BASE_MODEL_ID,
         token=HF_TOKEN or None,
         use_fast=True,
     )
+    try:
+        template_path = hf_hub_download(
+            repo_id=ADAPTER_ID,
+            filename="chat_template.jinja",
+            token=HF_TOKEN or None,
+        )
+        from pathlib import Path
+        tokenizer.chat_template = Path(template_path).read_text(encoding="utf-8")
+        LOG.info("Loaded SWIN chat template from %s", ADAPTER_ID)
+    except Exception as error:
+        LOG.warning(
+            "Adapter chat template is not available; using the base tokenizer template: %s",
+            error,
+        )
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
