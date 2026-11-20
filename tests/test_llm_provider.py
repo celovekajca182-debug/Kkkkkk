@@ -64,7 +64,7 @@ class LlmProviderTests(unittest.TestCase):
         )
         self.assertEqual(
             llm_provider.model_for_role("code"),
-            "Qwen/Qwen2.5-Coder-7B-Instruct",
+            "MAKSIM67771488/SWIN-AI-Coder-Smart",
         )
 
     def test_completion_uses_correct_model_and_auth(self):
