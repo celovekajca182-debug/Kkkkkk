@@ -16,7 +16,7 @@ CHAT_MODEL = os.getenv(
     "SWIN_CHAT_MODEL", "Qwen/Qwen3-4B-Thinking-2507"
 ).strip()
 CODE_MODEL = os.getenv(
-    "SWIN_CODE_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct"
+    "SWIN_CODE_MODEL", "MAKSIM67771488/SWIN-AI-Coder-Smart"
 ).strip()
 
 # A shared gateway is supported, but per-role URLs allow two independent GPU hosts.
