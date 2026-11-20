@@ -1,0 +1,8 @@
+# PyTorch is provided by the CUDA-enabled base image in peft-inference.Dockerfile.
+transformers>=4.51.0,<5.0.0
+peft==0.21.2
+accelerate>=1.6.0,<2.0.0
+bitsandbytes>=0.45.0
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.34.0,<1.0.0
+safetensors>=0.5.0
