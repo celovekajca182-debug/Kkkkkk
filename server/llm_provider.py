@@ -135,6 +135,14 @@ def generate_model_text(
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if api_key:
         headers["Authorization"] = "Bearer " + api_key
+    # A scale-to-zero Hugging Face Endpoint can cold-start a GPU replica.
+    # Ask its proxy to hold this request while the replica becomes ready.
+    try:
+        provider_host = (urlsplit(base_url).hostname or "").lower()
+    except ValueError:
+        provider_host = ""
+    if role == "code" and provider_host.endswith(".endpoints.huggingface.cloud"):
+        headers["X-Scale-Up-Timeout"] = os.getenv("SWIN_CODE_SCALE_UP_TIMEOUT", "180")
 
     request = urllib.request.Request(
         _completion_url(base_url),
