@@ -211,7 +211,7 @@ class LlmProviderTests(unittest.TestCase):
         ):
             self.assertEqual(llm_provider.generate_model_text("hello", role="code"), "ready")
         request = urlopen.call_args.args[0]
-        self.assertEqual(request.get_header("X-scale-up-timeout"), "180")
+        self.assertEqual(request.get_header("X-Scale-Up-Timeout"), "180")
 
 
 if __name__ == "__main__":
