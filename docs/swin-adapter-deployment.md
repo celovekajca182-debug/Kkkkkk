@@ -76,7 +76,7 @@ coding_model must show MAKSIM67771488/SWIN-AI-Coder-Smart.
 The Docker image is published to GitHub Container Registry by
 `.github/workflows/publish-swin-peft-image.yml`.
 Use the immutable commit tag shown in the successful publish workflow run:
-`ghcr.io/celovekajca182-debug/swin-peft-coder:<IMAGE_COMMIT_SHA>`.
+`ghcr.io/celovekajca182-debug/swin-peft-coder:c63a4fce3448623e2e03514adea0595d0caeade1`.
 
 1. Open the [Inference Endpoints dashboard](https://ui.endpoints.huggingface.co/).
 2. Select the base repository `unsloth/Qwen2.5-Coder-1.5B-Instruct-bnb-4bit`.
@@ -87,8 +87,9 @@ Use the immutable commit tag shown in the successful publish workflow run:
 4. Under **Custom Container**, use the published image tag, set port `8000`,
    and health route `/health`.
 5. Add runtime environment variables:
-   - `SWIN_INFERENCE_API_KEY`: a new long random secret shared only with the
-     Render API service.
+   - `SWIN_INFERENCE_API_KEY`: use the same value as the existing Render
+     `SWIN_LLM_API_KEY`, or create a separate long random key and then also set
+     `SWIN_CODE_API_KEY` to that same value on Render.
    - `HF_TOKEN`: optional read token; the base and adapter repositories are
      public, so it is not needed unless Hub access requires authentication.
    - `SWIN_CODE_ADAPTER=MAKSIM67771488/SWIN-AI-Coder-Smart`
@@ -107,6 +108,7 @@ After the endpoint URL exists, set these server-side environment variables on
 the existing Render API service (never in the Android APK):
 
     SWIN_CODE_BASE_URL=https://YOUR-ENDPOINT-URL/v1
+    # Set only when you chose a new key instead of reusing SWIN_LLM_API_KEY:
     SWIN_CODE_API_KEY=THE_SAME_SWIN_INFERENCE_API_KEY
     SWIN_CODE_MODEL=MAKSIM67771488/SWIN-AI-Coder-Smart
 
