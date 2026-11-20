@@ -35,13 +35,11 @@ vllm serve Qwen/Qwen3-4B-Thinking-2507 \
   --host 0.0.0.0 --port 8000 \
   --enable-reasoning --reasoning-parser deepseek_r1
 
-# Coding endpoint (separate host)
-vllm serve Qwen/Qwen2.5-Coder-7B-Instruct \
-  --host 0.0.0.0 --port 8000
+# The custom SWIN LoRA model is served by the PEFT container:
+# see docs/swin-adapter-deployment.md
 ```
 
-Set `SWIN_CHAT_BASE_URL=https://CHAT-HOST/v1` and `SWIN_CODE_BASE_URL=https://CODE-HOST/v1` on the FastAPI service. The API key variables are optional if your inference hosts do not require bearer authentication.
- vLLM and SGLang document this interface for the two selected model families. Recommended: run Qwen3 and Qwen2.5-Coder as separate GPU deployments and set a separate URL/key for each role. A shared gateway is also supported.
+Set `SWIN_CHAT_BASE_URL=https://CHAT-HOST/v1` and `SWIN_CODE_BASE_URL=https://CODE-HOST/v1` on the FastAPI service. The custom SWIN code endpoint must be the PEFT container in `docs/swin-adapter-deployment.md`. API key variables are optional only when the corresponding inference host does not require bearer authentication.
 For the Qwen3 Thinking endpoint, enable the reasoning parser (vLLM: `--enable-reasoning --reasoning-parser deepseek_r1`; SGLang: `--reasoning-parser deepseek-r1`) so internal reasoning is separated from the user-visible answer.
 
 ## Environment variables
@@ -53,9 +51,9 @@ Set these as server-side secrets/environment variables. Never put the provider k
 | `SWIN_LLM_BASE_URL` | empty | OpenAI-compatible API root, `/v1` URL, or full `/chat/completions` URL |
 | `SWIN_LLM_API_KEY` | empty | Shared bearer key for a gateway |
 | `SWIN_CHAT_BASE_URL` | shared URL | Dedicated Qwen3 endpoint; overrides the shared URL |
-| `SWIN_CODE_BASE_URL` | shared URL | Dedicated Qwen2.5-Coder endpoint; overrides the shared URL |
+| `SWIN_CODE_BASE_URL` | empty | Dedicated SWIN PEFT CUDA endpoint; required for the custom adapter |
 | `SWIN_CHAT_API_KEY` | shared key | Optional Qwen3 endpoint key |
-| `SWIN_CODE_API_KEY` | shared key | Optional Qwen2.5-Coder endpoint key |
+| `SWIN_CODE_API_KEY` | shared key | Bearer key for the dedicated SWIN PEFT endpoint |
 | `SWIN_CHAT_MODEL` | `Qwen/Qwen3-4B-Thinking-2507` | Model ID used by `/chat` |
 | `SWIN_CODE_MODEL` | `MAKSIM67771488/SWIN-AI-Coder-Smart` | Custom adapter served by the dedicated CUDA service |
 | `SWIN_LLM_TIMEOUT_SECONDS` | `90` | Inference request timeout, clamped to 5–240 seconds |
@@ -76,7 +74,7 @@ In the Render API service environment, set:
 SWIN_LLM_BASE_URL=https://router.huggingface.co/v1
 SWIN_LLM_API_KEY=hf_your_inference_token
 SWIN_CHAT_MODEL=Qwen/Qwen3-4B-Thinking-2507
-SWIN_CODE_MODEL=Qwen/Qwen2.5-Coder-7B-Instruct
+SWIN_CODE_MODEL=MAKSIM67771488/SWIN-AI-Coder-Smart
 ```
 
 Create a Hugging Face token with inference permissions, enable an available provider in the Inference Providers settings, add these values to the server (not the Android app), and redeploy the API. This shared router configuration serves chat only while the custom adapter is the configured code model. Set `SWIN_CODE_BASE_URL` and `SWIN_CODE_API_KEY` separately after deploying the dedicated CUDA service. Provider usage is billed at the selected provider's price; check current pricing before using it.
