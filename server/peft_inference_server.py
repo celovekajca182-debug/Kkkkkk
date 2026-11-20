@@ -11,6 +11,7 @@ import secrets
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, Header, HTTPException
@@ -123,9 +124,14 @@ def _load_runtime() -> tuple[Any, Any, Any]:
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    LOG.info("Loading 4-bit base model %s", BASE_MODEL_ID)
+    # Inference Endpoints mounts the selected base repository at /repository.
+    # Use that local mount when present; otherwise download the configured Hub ID.
+    base_model_source = (
+        "/repository" if Path("/repository/config.json").is_file() else BASE_MODEL_ID
+    )
+    LOG.info("Loading 4-bit base model %s", base_model_source)
     base_model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL_ID,
+        base_model_source,
         token=HF_TOKEN or None,
         device_map="auto",
         torch_dtype=torch.float16,
